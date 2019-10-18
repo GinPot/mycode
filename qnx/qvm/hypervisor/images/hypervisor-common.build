@@ -1,0 +1,422 @@
+#Concatenate above, the architecture-specific common hypervisor build file
+
+[uid=0 gid=0]
+
+[+script] common-script = {
+#-------------------------------------------------------------------------------
+	display_msg "Mounting Hypervisor disk image partitions..."
+	/scripts/mountHVPartitions.sh
+	
+#-------------------------------------------------------------------------------
+	#Add a few more tty's, which may be used each time a guest starts
+	devc-pty -n32 &
+
+	# ssh-keygen, called below, depends on random daemon being available
+	/scripts/random-start.sh
+	waitfor /dev/random
+
+	# Delay if necessary for the writable folder to be available before generating ssh keys. This file must be included (empty) on the disk
+	waitfor /etc/ssh/ssh_known_hosts
+	/scripts/ssh-start.sh
+
+#-------------------------------------------------------------------------------
+	# Assumes io-pkt was started already in the board-specific script!
+	# vdevpeer (or tap) devices are needed by vdev-virtio-net device, one unique interface per guest
+	# Create a couple example interfaces that can be used with the qnx 7.0 and qnx6.6 guests that are available on Software Center.
+
+	# bump the cluster mbufs limits from the default 8K, since devnp-vdevpeer.so consumes a lot of them
+	sysctl -w kern.mbuf.nmbclusters=65536
+
+        mount -Tio-pkt -o peer=/dev/qvm/qnx7-x86-guest/guest_to_host,bind=/dev/vdevpeers/vp0 devnp-vdevpeer.so
+	if_up -p vp0
+	ifconfig vp0 tcp4csum udp4csum tcp6csum udp6csum tso4 tso6
+	ifconfig vp0 up
+        ifconfig vp0 192.168.143.1
+        #mount -Tio-pkt -o peer=/dev/qvm/qnx66-x86-guest/guest_to_host,bind=/dev/vdevpeers/vp1 devnp-vdevpeer.so
+        #if_up -p vp1
+        #ifconfig vp1 tcp4csum udp4csum tcp6csum udp6csum tso4 tso6
+        #ifconfig vp1 up
+
+        ifconfig bridge0 create
+        #brconfig bridge0 add vp0 up add vp1 up
+
+	# Also add the host interface, note that the name of this interface may vary on hosts, so we use a
+	# script and an env var set in the board-specific build file to do this.
+        /scripts/add-host-interface-to-bridge.sh &
+
+#-------------------------------------------------------------------------------
+		/scripts/detectAndRunCustomStart.sh
+
+        display_msg "QNX Hypervisor 2.0 boot successful. Starting AGL ..."
+	
+        #sleep 3
+        #ifconfig ravb0
+        /disk-dos/linux_guest_start.sh
+}
+
+[data=u]
+
+
+###########################################################################
+## SSH Support
+###########################################################################
+
+# for GDB
+libexpat.so
+liblzma.so
+libiconv.so
+
+###########################################################################
+## PAM authentication pieces
+###########################################################################
+[prefix=/usr/lib]
+pam_deny.so
+pam_echo.so
+pam_exec.so
+pam_ftpusers.so
+pam_group.so
+pam_permit.so
+pam_qnx.so
+pam_radius.so
+pam_rootok.so
+pam_self.so
+libpam.so
+
+###########################################################################
+## Hypervisor shared libs
+###########################################################################
+[prefix=/lib/dll]
+vdev-progress.so
+vdev-ser8250.so
+vdev-shmem.so
+vdev-virtio-blk.so
+vdev-virtio-console.so
+vdev-virtio-net.so
+
+# a network interface that uses the vdevpeer API from QVM to connect to a virtio-net vdev attached to a guest.
+devnp-vdevpeer.so
+
+#Restore default prefix
+[prefix=/proc/boot]
+
+# For ssh (may be a duplicate if board BSP build file has it too, which is ok).
+libcrypto.so
+libz.so
+
+libfdt.so
+libc++.so
+libstdc++.so.6
+
+[data=c]
+
+# A script to detect/run a custom startup script on the dos partition of a USB stick
+[type=file uid=0 gid=0 perms=0755] /scripts/detectAndRunCustomStart.sh = {
+#!/bin/sh
+
+    waitfor /disk-dos/hv_setup.sh 1 2>/dev/null
+    if [ $? -eq 0 ]; then
+	    echo "Kicking off /disk-dos/hv_setup.sh..."
+	    /disk-dos/hv_setup.sh
+    else
+        echo "No custom startup script found at /disk-dos/hv_setup.sh. If custom startup behaviour is desired, create this shell script and reboot."
+    fi
+}
+
+# A script to mount the partitions from the prescribed Hypervisor disk image
+# Note that HV_DISK is set in the board-specific build file.
+[type=file uid=0 gid=0 perms=0755] /scripts/mountHVPartitions.sh = {
+#!/bin/sh
+
+if [ -z $HV_DISK ]; then
+	echo "Environment var HV_DISK is not set properly (found HV_DISK='$HV_DISK')"
+	echo "export HV_DISK to be either the device that represents your Hypervisor boot disk (e.g. /dev/hd1), or export HV_DISK to be the prefix that you expect your Hypervisor disk to be (e.g. /dev/hd) and the script will search for a matching disk with the expected partition layout (2 partitions: one of type 11, one of type 177)."
+	exit 1
+fi
+
+# If HV_DISK does not have a number on the end of it, we will 
+# search for a disk with the expected partition layout.
+if ! `echo $HV_DISK | grep -q ".*[0-9]$"`; then
+        num=0
+
+        echo "Searching for a disk with the expected Hypervisor partition layout"
+        while true; do
+
+                # May need to wait a small amount for the disk to appear from the devb driver running 
+                if ! `waitfor $\{HV_DISK\}$num 2`; then
+                        echo "Inspected up to $\{HV_DISK\}$num, did not find a disk with the expected layout of 2 partitions, of type 11 and 177. No guests will be available, and some other functionality may be missing or malfunction. Please verify you have a disk connected that has a Hypervisor disk image written to it".
+                        exit 1
+                fi
+
+		# The condition we look for here is that there are 2 partitions, one of type 11 and one of type 177. If you happen to have more than one disk with that layout connected, then this may not work, but that is deemed unlikely to happen.
+                if [ -e $\{HV_DISK\}$\{num\}t11 -a -e $\{HV_DISK\}$\{num\}t177 ]; then
+                        export HV_DISK=$\{HV_DISK\}$num
+                        echo FOUND disk with expected format: 
+                        ls $HV_DISK*
+                        break
+                fi
+                num=$((num+1))
+        done
+fi
+
+# We still may need to wait a small amount here for the disk to show up
+if ! `waitfor $HV_DISK 2`; then
+	echo "Did not find a disk at env var location HV_DISK=$HV_DISK. Please check what entry in /dev you disk is represented by, and that HV_DISK is set appropriately."
+	echo "export HV_DISK to be either the device that represents your Hypervisor boot disk (e.g. /dev/hd1), or export HV_DISK to be the prefix that you expect your Hypervisor disk to be (e.g. /dev/hd) and the script will search for a matching disk with the expected partition layout (2 partitions: one of type 11, one of type 177)."
+	exit 1
+fi
+
+#echo "Mounting Hypervisor QNX6 filesystem from disk $\{HV_DISK\}t177 onto /, see /guests for Hypervisor Guest content"
+#mount -o sync=optional -tqnx6 $\{HV_DISK\}t177 /
+echo "Mounting Hypervisor DOS filesystem from $\{HV_DISK\}t11 onto /, create /disk-dos/hv_setup.sh to customize startup"
+mount -tdos -o exe=all $\{HV_DISK\}t11 /
+
+exit 0
+
+}
+
+###########################################################################
+## general commands
+#
+# Note that most of these can be removed if you have a filesystem mounted.
+# Right now we don't
+###########################################################################
+
+[prefix=sbin]
+devb-ram
+pipe
+shutdown
+rtc
+fdisk
+mkdosfs
+mkqnx6fs
+[search=${QNX_TARGET}/${PROCESSOR}/sbin perms=a+x] io
+mq
+mqueue
+sysctl
+
+[prefix=/bin]
+ksh
+uname
+pidin
+ls
+slay
+kill
+cat
+cp
+mkdir
+rmdir
+rm
+mv
+slogger2
+slog2info
+sync
+/bin/on=on
+mount
+umount
+ln
+vi
+df
+aps
+waitfor
+sed
+awk
+in32
+out32
+du
+
+[prefix=/usr/sbin]
+dumper
+qconn
+fs-cifs
+random
+tracelogger
+
+[prefix=/usr/bin]
+less
+setconf
+getconf
+date
+env
+scp
+ssh
+touch
+use
+more
+hd
+grep
+sleep
+find
+xargs
+chmod
+chown
+dd
+which
+diff
+cmp
+tar
+gzip
+clear
+strings
+dvtm
+dtach    # Use dtach together with dvtm to start qvm guests in the background
+top
+hogs
+traceprinter
+[+optional] gdb
+stty
+brconfig
+wc
+
+# Put default prefix back to /proc/boot
+[prefix=/proc/boot]
+# Required by dhclient
+arp
+hostname
+route
+
+###########################################################################
+## PAM authentication pieces
+###########################################################################
+/etc/pam.d=${QNX_TARGET}/etc/pam.d/
+
+###########################################################################
+## uncomment for inetd support
+###########################################################################
+/bin/devc-pty=devc-pty
+/usr/sbin/inetd=inetd
+# Set setuid bit on login and passwd for PAM etc
+[perms=u+s]/bin/login=login
+[perms=u+s]/bin/passwd=passwd
+/etc/group=${QNX_TARGET}/etc/group
+/etc/hosts=${QNX_TARGET}/etc/hosts
+/etc/services=${QNX_TARGET}/etc/services
+/etc/passwd=${QNX_TARGET}/etc/passwd
+/etc/esh = {
+}
+
+[perms=0666] /root/.profile {
+export SYSNAME=nto
+export TERM=xterm
+export PATH=/proc/boot:/sbin:/bin:/usr/bin:/opt/bin/sbin:/usr/sbin
+export LD_LIBRARY_PATH=/proc/boot:/lib:/usr/lib:/lib/dll:/opt/lib:/lib/dll/pci
+
+export PCI_BKWD_COMPAT_MODULE=/lib/dll/pci/pci_bkwd_compat.so
+export PCI_SLOG_MODULE=/lib/dll/pci/pci_slog2.so
+export PCI_DEBUG_MODULE=/lib/dll/pci/pci_debug2.so
+export PCI_BASE_VERBOSITY=2
+
+#This one is defined in the board-specific build file
+. ./envset.sh
+alias ll='ls -alF'
+alias la='ls -aF'
+alias ls='ls -F'
+}
+
+[perms=0640] /etc/shadow = {
+root:E4m.vvfkKBbRo:1231323780:0:0
+}
+
+/etc/passwd = {
+root::0:0:Superuser:/root:/bin/sh
+sshd:x:15:6:sshd:/var/chroot/sshd:/bin/false
+}
+
+[type=file uid=0 gid=0 perms=0755] /scripts/add-host-interface-to-bridge.sh = {
+#!/bin/sh
+
+echo "Adding host ethernet interface to the bridge"
+brconfig bridge0 add $ETH_IF up
+
+}
+
+###########################################################################
+## sshd support
+###########################################################################
+/usr/bin/sshd=sshd
+/usr/bin/ssh-keygen=ssh-keygen
+/usr/libexec/sftp-server=${QNX_TARGET}/${PROCESSOR}/usr/libexec/sftp-server
+
+# A script to start random daemon if not already started
+[type=file uid=0 gid=0 perms=0755] /scripts/random-start.sh = {
+#!/bin/sh
+
+if [ ! -c /dev/random ]; then
+        echo "Starting random!"
+        random -t -p
+fi
+}
+
+[type=file uid=0 gid=0 perms=0755] /scripts/ssh-start.sh = {
+#!/bin/sh
+
+with_umask ()
+\{
+        local oldmask ret
+        [ "$#" -ge 1 ] || return
+
+        oldmask=$(umask) || return
+        umask "$1" || return
+        shift
+
+        ret=0
+        "$@" || ret=$?
+
+        umask "$\{oldmask?\}"
+        return "$\{ret:?\}"
+\}
+
+tools_ssh_keygen ()
+\{
+        local ssh_etcdir type filename etckey
+        ssh_etcdir="/etc/ssh"
+
+        for type in rsa dsa ecdsa ed25519
+        do
+                filename="ssh_host_$\{type:?\}_key"
+                etckey="$\{ssh_etcdir?\}/$\{filename:?\}"
+
+                if [ ! -f "$\{etckey:?\}" ]  # no key yet
+                then
+                        ssh-keygen -q -t "$\{type:?\}" -N '' -f "$\{etckey:?\}" 
+                fi
+        done
+\}
+
+tools_sshd ()
+\{
+        local x
+        \{
+                with_umask 022 tools_ssh_keygen
+
+                # Start sshd here stand-alone (Do not start via inetd because the inetd connection rate limiting takes 
+                # effect and when using a script for multiple connections then connections may be denied.
+                ssh_path=$(command -v sshd) && "$ssh_path"
+        \} &
+\}
+
+
+tools_sshd;
+
+}
+
+#Include common terminfo database entries
+/usr/lib/terminfo/a=${QNX_TARGET}/usr/lib/terminfo/a
+/usr/lib/terminfo/q=${QNX_TARGET}/usr/lib/terminfo/q
+/usr/lib/terminfo/v=${QNX_TARGET}/usr/lib/terminfo/v
+/usr/lib/terminfo/x=${QNX_TARGET}/usr/lib/terminfo/x
+
+###########################################################################
+## Hypervisor files
+###########################################################################
+/sbin/qvm = qvm
+[+optional] /bin/qvm-check = qvm-check
+/sbin/shmem-host = shmem-host
+/sbin/shmem-dump = shmem-dump
+/sbin/grabbuffer = grabbuffer
+
+/bin/smmuman = smmuman
+
+# Include some details about the build, SVN revisions, etc. Will be populated by the build.
+[type=file +optional] /etc/os.version = ./os.version
+
+

@@ -1,0 +1,6 @@
+Protocol 2
+LoginGraceTime 600
+PermitRootLogin yes
+PasswordAuthentication yes
+PermitEmptyPasswords yes
+Subsystem       sftp    /usr/libexec/sftp-server

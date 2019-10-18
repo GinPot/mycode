@@ -1,0 +1,14 @@
+<!-- Unless otherwise specified, values/attributes are free-form strings -->
+    <!-- type is currently either BSP or SourceOnly -->
+<sourcePackage type="BSP" id="bsp-hypervisor-host">
+    <title>Hypervisor host BSP wrapper</title>
+    <release>BSP_hypervisor-host_br-mainline_be-700-BN863</release>
+    <maturity>Development Build</maturity>
+    <license>QDL and Apache II</license>
+    <startup></startup>
+    <description>This package is intended to be wrapped around a standard BSP (which is to be included in images/components/ by the build), such that: all of the standard BSP's IFS build files are enabled with Hypervisor; some hypervisor-specifics are added to the BSP's IFS build files; a disk image is produced with the host's IFSs included in a bootable dos partition, as well as a larger data partition; and a few guests are included in the disk image's data partition (also to be placed in images/components by the build)</description>
+    <vendor>QNX Software Systems</vendor>
+    <qnxTargetVersion>SDP7.0</qnxTargetVersion>
+    <!-- Hypervisor BSPs can run on a number of different target CPUs -->
+    <qnxTargetCPU variant="*"></qnxTargetCPU>
+</sourcePackage>

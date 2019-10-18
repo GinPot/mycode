@@ -1,0 +1,8 @@
+STATE=Desktop
+INSTALLDIR=aarch64le//usr/lib/
+INSTALLNAME=lib-camera_lib.so
+NAME=lib-camera_lib.so
+USER=wuping
+HOST=wuping
+DATE=2019/02/20-14:59:07-CST
+DESCRIPTION = QNX video capture driver for decoder

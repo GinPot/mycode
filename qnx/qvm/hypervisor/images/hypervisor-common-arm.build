@@ -1,0 +1,21 @@
+#Concatenate above, the board-specific hypervisor build file
+
+[uid=0 gid=0]
+
+[data=u]
+
+###########################################################################
+## Hypervisor shared libs
+###########################################################################
+
+[prefix=/lib/dll]
+vdev-pl011.so
+vdev-wdt-sp805.so
+
+
+#Restore default prefix
+[prefix=/proc/boot]
+
+[data=c]
+
+#Concatenate below, the hypervisor-common.build file

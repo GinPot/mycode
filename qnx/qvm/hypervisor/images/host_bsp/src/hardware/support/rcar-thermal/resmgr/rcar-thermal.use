@@ -1,0 +1,20 @@
+Renesas R-CAR thermal driver
+
+Syntax
+%C [options] &
+
+Options:
+    -I      Interface: Select which thermal sensor to use (THS1, THS2, THS3)
+    -b      Thermal Sensor base register
+    -i      IRQ list
+    -t      Threshold List: Specify temperature threshold(s) in Celsius that will trigger an interrupt
+    -V      Driver version (1=H3 WS1.1; 2=H3 WS2.0, M3 WS1.0; 3=V3)
+    -v      Verbose level (default 0)
+
+Examples:
+
+    # Start THS1, an interrupt will be triggered at 20 degree Celsius
+    rcar-thermal -I1 -t20
+
+    # Start THS2, an interrupt will be triggered at -10 degree Celsius and 30 degree Celsius
+    rcar-thermal -I2 -t-10,30

@@ -1,0 +1,17 @@
+[num_sectors=1047552]
+[sector_size=512]
+# The build must add an entry for each Hypervisor Guest IFS that can be booted here, of the form '[type=file] /path/on/disk[=/path/on/host]'
+
+# Make a writable /root folder, used when you ssh-in as root.
+[type=dir uid=0 gid=0 perms=0700] /root
+
+# Use -followlink to include this whole folder
+#[-followlink] /apps/Sakura = ../apps/Sakura
+#[-followlink] /apps/HUDApp_20171227 = ../apps/HUDApp_20171227
+[-followlink perms=0777] /disk-dos/hv_setup.sh = ../sd_card/hv_setup.sh
+[-followlink perms=0777] /disk-dos/linux_guest_start.sh = ../sd_card/linux_guest_start.sh
+[-followlink perms=0777] /disk-dos/guests/linux/linux.qvmconf = ../sd_card/guests/linux/linux.qvmconf
+[-followlink perms=0777] /apps/cluster = ../src/apps/hypervisor/demos/cluster
+[-followlink perms=0777] /apps/newCluster = ../src/apps/hypervisor/demos/newCluster
+[-followlink perms=0777] /apps/Diagnosis = ../src/apps/hypervisor/demos/Diagnosis/
+[-followlink perms=0777] /usr/connect = ../screen_archive/aarch64le/lib/connect

@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<module name="rcarsata">
+	<type>Element</type>
+	<classification>Driver</classification>
+
+
+	<supports>
+		<availability>
+			<cpu isa="arm"/>
+		</availability>
+	</supports>
+
+	<source available="false">
+		<location type="">.</location>
+	</source>
+	<GroupOwner>hw</GroupOwner>
+	<RuntimeComponent>Neutrino RTOS</RuntimeComponent>
+
+
+	<contents>
+		<component id="rcarsata" generated="true">
+			<location basedir="{cpu}/{o|endian}"
+				 runtime="true">devb-rcarsata</location>
+		</component>
+	</contents>
+
+	<requires>
+		<part build="true" location="lib/drvr"/>
+		<part build="false" location="hardware/devb"/>
+	</requires>
+
+</module>

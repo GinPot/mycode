@@ -1,0 +1,47 @@
+#
+# Copyright 2017, QNX Software Systems.
+#
+# Licensed under the Apache License, Version 2.0 (the "License"). You
+# may not reproduce, modify or distribute this software except in
+# compliance with the License. You may obtain a copy of the License
+# at: http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" basis,
+# WITHOUT WARRANTIES OF ANY KIND, either express or implied.
+#
+# This file may contain contributions from others, either as
+# contributors under the License or as licensors under other terms.
+# Please review this entire file for other proprietary rights or license
+# notices, as well as the QNX Development Suite License Guide at
+# http://licensing.qnx.com/license-guide/ for other information.
+#
+//
+// Wait for spin_shim_id to match my MPIDR register and then
+// jump to the address in spin_shim_start
+//
+	.global spin_shim_rtn
+
+spin_shim_rtn:
+	mrc		p15, 0, r1, c0, c0, 5	// get MPIDR
+	and		r1, r1, #0xFFFFFF
+
+	ldr		r3,=spin_shim_id
+	sev
+1:
+	wfe
+	ldr		r2,[r3]
+	cmp		r2, r1
+	bne		1b
+	ldr		r7,=spin_shim_start
+	ldr		r7,[r7]
+	bx		r7
+
+#ifdef __QNXNTO__
+#ifdef __USESRCVERSION
+.section .ident, "SM",%progbits,1;
+.asciz "$URL: http://svn.ott.qnx.com/product/mainline/hardware/startup/lib/arm/spin_shim_rtn.S $ $Rev: 824533 $";
+.previous
+#endif
+#endif
+

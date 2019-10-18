@@ -1,0 +1,35 @@
+#Concatenate above, the BSP build file of your choosing
+
+[+script] mrb-startup-script = {
+    # Set board device name for the installation disk that Hypervisor is installed onto (BSP build file may dictate this, or you could start the driver here instead). Include the suffix number on the end if you are sure what it will be (e.g. /dev/hd1), otherwise leave it off (e.g. /dev/hd) and the mountHVPartitions script will search for a disk with the expected partition layout (1 of type 11, 1 of type 177).
+    HV_DISK=/dev/hd1
+
+    # Set board ethernet interface name
+    ETH_IF=wm0
+
+    # Apollo Lake BSP does not start dumper
+    display_msg "Starting dumper..."
+    dumper &
+
+    smmuman @/etc/apollo_lake.smmu
+}
+
+
+########################
+## Intel MRB/Apollo Lake binaries
+########################
+
+[data=c]
+
+[perms=0444] /root/envset.sh {
+export PCI_HW_MODULE=/lib/dll/pci/pci_hw-Intel_x86_APL.so
+}
+
+/etc/apollo_lake.smmu = ${QNX_TARGET}/etc/apollo_lake.smmu
+
+###########################################################################
+## VM images
+###########################################################################
+
+
+#Concatenate below, the arch-specific common hypervisor build file

@@ -1,0 +1,8 @@
+STATE=Desktop
+INSTALLDIR=aarch64le/bin/
+INSTALLNAME=memoryload
+NAME=memoryload
+USER=wuping
+HOST=wuping
+DATE=2019/03/28-13:36:31-CST
+DESCRIPTION=Hypervisor shared memory device tutorial for a host

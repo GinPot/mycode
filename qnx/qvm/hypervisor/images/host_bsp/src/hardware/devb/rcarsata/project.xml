@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<module name="rcarsata">
+  <classification>Driver</classification>
+  <supports>
+    <availability>
+      <cpu isa="arm"/>
+    </availability>
+  </supports>
+  <contents>
+    <component id="rcarsata" generated="true">
+      <location basedir="arm/o">devb-rcarsata</location>
+    </component>
+  </contents>
+  <requires>
+    <part build="true" location="lib/drvr"/>
+    <part build="false" location="hardware/devb"/>
+  </requires>
+</module>

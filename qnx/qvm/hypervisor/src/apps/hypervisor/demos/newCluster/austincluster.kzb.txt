@@ -1,0 +1,331 @@
+﻿Files:
+PropertyTypeLibrary/ADAS.IsGap
+PropertyTypeLibrary/ADAS.LeftLaneLineState
+PropertyTypeLibrary/ADAS.RightLaneLineState
+PropertyTypeLibrary/ADAS.Shader.BackColor
+PropertyTypeLibrary/ADAS.Shader.BlurOffsetY
+PropertyTypeLibrary/ADAS.Shader.IsBlink
+PropertyTypeLibrary/ADAS.Shader.ParamA
+PropertyTypeLibrary/ADAS.Shader.ParamB
+PropertyTypeLibrary/ADAS.Shader.ParamC
+PropertyTypeLibrary/ADAS.Shader.ParamD
+PropertyTypeLibrary/ADAS.Shader.RoadOffset
+PropertyTypeLibrary/ADAS.Shader.RoadScale
+PropertyTypeLibrary/ADAS.Shader.TextureCustomBlendIntensity
+PropertyTypeLibrary/AustinCluster.TimeDisplay.hour_decade
+PropertyTypeLibrary/AustinCluster.TimeDisplay.Text
+PropertyTypeLibrary/AustinCluster.TimeDisplay.Text_1
+PropertyTypeLibrary/ConnectAction.Introspection.Controlservice.Commend
+PropertyTypeLibrary/ConnectTrigger.Instrospection.Controlservice.CommendNotice
+PropertyTypeLibrary/Controlservice.Commend.Arg_1
+PropertyTypeLibrary/Controlservice.Commend.Arg_2
+PropertyTypeLibrary/Controlservice.Commend.CommendID
+PropertyTypeLibrary/Controlservice.Commend.CommendType
+PropertyTypeLibrary/Controlservice.CommendNotice.NoticeArg_1
+PropertyTypeLibrary/Controlservice.CommendNotice.NoticeArg_2
+PropertyTypeLibrary/Controlservice.CommendNotice.NoticeID
+PropertyTypeLibrary/Controlservice.CommendNotice.NoticeType
+PropertyTypeLibrary/CubemapColor
+PropertyTypeLibrary/Guage.CrcCheckErr
+PropertyTypeLibrary/Guage.CurrentShow
+PropertyTypeLibrary/Guage.IsCameraOn
+PropertyTypeLibrary/Guage.IsMediaShown
+PropertyTypeLibrary/Guage.IsShownBigScreen
+PropertyTypeLibrary/Guage.RPM_Num
+PropertyTypeLibrary/Guage.ShowPannel
+PropertyTypeLibrary/Guage.Speed_Num
+PropertyTypeLibrary/Guage.TT_LastState
+PropertyTypeLibrary/Guage.TT_ShowAll
+PropertyTypeLibrary/Guage.TT_ShowGreen
+PropertyTypeLibrary/Guage.TT_ShowIndex
+PropertyTypeLibrary/Guage.TT_ShowYellow
+PropertyTypeLibrary/Media.CurrentTime
+PropertyTypeLibrary/Media.CurrentTimeStr
+PropertyTypeLibrary/Media.Mul_textureLen
+PropertyTypeLibrary/Media.Mul_textureLenStr
+PropertyTypeLibrary/Media.Mul_textureString
+PropertyTypeLibrary/Media.Mul_TextureTypeInt
+PropertyTypeLibrary/Media.Mul_TextureTypeStr
+PropertyTypeLibrary/Media.Mul_Type
+PropertyTypeLibrary/Media.TotalTime
+PropertyTypeLibrary/Media.TotalTimeStr
+PropertyTypeLibrary/offset
+PropertyTypeLibrary/smoothing
+PropertyTypeLibrary/Texture2
+PropertyTypeLibrary/TextureCube
+PropertyTypeLibrary/Time.DisplayType
+PropertyTypeLibrary/Time.Font
+PropertyTypeLibrary/Time.FontSize
+PropertyTypeLibrary/Time.HorizontalMarginLeft
+PropertyTypeLibrary/Time.hour_decade
+PropertyTypeLibrary/Time.hour_single
+PropertyTypeLibrary/Time.minute_decade
+PropertyTypeLibrary/Time.minute_single
+PropertyTypeLibrary/Time.second_decade
+PropertyTypeLibrary/Time.second_single
+PropertyTypeLibrary/TAG_PROPERTY_TYPE_Transparent
+Animation Clips/Animation Clip
+Animation Clips/Take 001
+Animation Clips/RoadLineAnimation
+Animation Clips/TT_Show
+Animation Clips/TT_Show2
+Screens/Screen/RootPage/BGControl/BG
+Screens/Screen/RootPage/BGControl/Image
+Screens/Screen/RootPage/ACC/ADAS/CarLine/Scene/Root/Left_Road/LeftRoad
+Screens/Screen/RootPage/ACC/ADAS/CarLine/Scene/Root/Right_Road/LeftRoad
+Screens/Screen/RootPage/ACC/ADAS/CarLine/Scene/Root/Left_Road
+Screens/Screen/RootPage/ACC/ADAS/CarLine/Scene/Root/Right_Road
+Screens/Screen/RootPage/ACC/ADAS/CarLine/Scene/Camera
+Screens/Screen/RootPage/ACC/ADAS/CarLine/Scene/Directional Light
+Screens/Screen/RootPage/ACC/ADAS/CarLine/Scene/Root
+Screens/Screen/RootPage/ACC/ADAS/CarLine/Scene
+Screens/Screen/RootPage/ACC/ADAS/CarLine
+Screens/Screen/RootPage/ACC/designSketch
+Screens/Screen/RootPage/ACC/road
+Screens/Screen/RootPage/ACC/greenRoad
+Screens/Screen/RootPage/ACC/roadLineImg
+Screens/Screen/RootPage/ACC/mineCar
+Screens/Screen/RootPage/ACC/farCar
+Screens/Screen/RootPage/ACC/ADAS
+Screens/Screen/RootPage/Meter/Speed/Speed/speed/Point_L
+Screens/Screen/RootPage/Meter/Speed/Speed/speed
+Screens/Screen/RootPage/Meter/Speed/Value/num
+Screens/Screen/RootPage/Meter/Speed/Value/unit
+Screens/Screen/RootPage/Meter/Speed/Speed
+Screens/Screen/RootPage/Meter/Speed/Value
+Screens/Screen/RootPage/Meter/RPM/RPM/rpm/Point_R
+Screens/Screen/RootPage/Meter/RPM/RPM/rpm
+Screens/Screen/RootPage/Meter/RPM/Center/top
+Screens/Screen/RootPage/Meter/RPM/Center/center
+Screens/Screen/RootPage/Meter/RPM/Center/bottom
+Screens/Screen/RootPage/Meter/RPM/RPM
+Screens/Screen/RootPage/Meter/RPM/Center
+Screens/Screen/RootPage/Meter/Speed
+Screens/Screen/RootPage/Meter/RPM
+Screens/Screen/RootPage/Camera/CameraArea
+Screens/Screen/RootPage/Media/SongTimes/PlayedTime
+Screens/Screen/RootPage/Media/SongTimes/SongTime
+Screens/Screen/RootPage/Media/Design
+Screens/Screen/RootPage/Media/BarBG
+Screens/Screen/RootPage/Media/Album
+Screens/Screen/RootPage/Media/SongName
+Screens/Screen/RootPage/Media/Singer
+Screens/Screen/RootPage/Media/Singer_1
+Screens/Screen/RootPage/Media/SongTimes
+Screens/Screen/RootPage/Media/SongProgressBar
+Screens/Screen/RootPage/Media/CurrentTime
+Screens/Screen/RootPage/Media/TotalTime
+Screens/Screen/RootPage/Taletell/TTCrcError/Bg/TTCrcErrorTxt
+Screens/Screen/RootPage/Taletell/TTCrcError/Bg
+Screens/Screen/RootPage/Taletell/TTCrcError
+Screens/Screen/RootPage/Taletell_Smaller/TTCrcError/Bg/TTCrcErrorTxt
+Screens/Screen/RootPage/Taletell_Smaller/TTCrcError/Bg
+Screens/Screen/RootPage/Taletell_Smaller/TTCrcError
+Screens/Screen/RootPage/ShowPannelController
+Screens/Screen/RootPage/TT_BtnShowController
+Screens/Screen/RootPage/bg_1
+Screens/Screen/RootPage/blackBorder
+Screens/Screen/RootPage/BGControl
+Screens/Screen/RootPage/ACC
+Screens/Screen/RootPage/DataLayer
+Screens/Screen/RootPage/Meter
+Screens/Screen/RootPage/BG_pic
+Screens/Screen/RootPage/Camera
+Screens/Screen/RootPage/Media
+Screens/Screen/RootPage/Taletell
+Screens/Screen/RootPage/Taletell_Smaller
+Screens/Screen/RootPage/FPS
+Screens/Screen/<ResourceDictionaryInNode>
+Screens/Screen/RootPage
+Screens/Screen
+Material Types/VertexPhong
+Material Types/VertexPhongCube
+Material Types/VertexPhongMorph
+Material Types/VertexPhongSkinned
+Material Types/VertexPhongTextured
+Material Types/VertexPhongTexturedCube
+Material Types/VertexPhongTexturedMorph
+Material Types/VertexPhongTexturedSkinned
+Material Types/ColorTexture
+Material Types/DefaultBlit
+Material Types/FontDefault
+Material Types/MaskTexture
+Material Types/SweepTextures
+Material Types/Textured
+Material Types/TT_Tell
+Material Types/RoadMoveOffsetTextured
+Materials/VertexPhongMaterial
+Materials/VertexPhongCubeMaterial
+Materials/VertexPhongMorphMaterial
+Materials/VertexPhongSkinnedMaterial
+Materials/VertexPhongTexturedMaterial
+Materials/VertexPhongTexturedCubeMaterial
+Materials/VertexPhongTexturedMorphMaterial
+Materials/VertexPhongTexturedSkinnedMaterial
+Materials/ColorTextureMaterial
+Materials/DefaultBlitMaterial
+Materials/FontDefaultMaterial
+Materials/MaskTextureMaterial
+Materials/SweepTexturesMaterial
+Materials/TexturedMaterial
+Materials/TT_TellMaterial
+Materials/RoadMoveOffsetTexturedMaterial
+Brushes/DefaultBackground
+Brushes/Black
+Brushes/Color Brush
+Brushes/MediaProgressBarColor
+Brushes/SingerFontColor
+Mesh Data/Road1
+Mesh Data/Road2
+Prefabs/Road(1)/Road(1)/RootNode/Road1
+Prefabs/Road(1)/Road(1)/RootNode/Road2
+Prefabs/Road(1)/Road(1)/<ResourceDictionaryInNode>
+Prefabs/Road(1)/Road(1)/RootNode
+Prefabs/Road(1)/Road(1)/Camera
+Prefabs/Road(1)/Road(1)
+Prefabs/TimeDisplay/TimeDisplay/hour/decade
+Prefabs/TimeDisplay/TimeDisplay/hour/single
+Prefabs/TimeDisplay/TimeDisplay/hour/separator
+Prefabs/TimeDisplay/TimeDisplay/minute/decade
+Prefabs/TimeDisplay/TimeDisplay/minute/single
+Prefabs/TimeDisplay/TimeDisplay/minute/separator
+Prefabs/TimeDisplay/TimeDisplay/second/decade
+Prefabs/TimeDisplay/TimeDisplay/second/single
+Prefabs/TimeDisplay/TimeDisplay/<ResourceDictionaryInNode>
+Prefabs/TimeDisplay/TimeDisplay/hour
+Prefabs/TimeDisplay/TimeDisplay/minute
+Prefabs/TimeDisplay/TimeDisplay/second
+Prefabs/TimeDisplay/TimeDisplay
+Prefabs/Road(1)
+Prefabs/TimeDisplay
+Animation Data/ADAS.Shader.RoadOffset
+Animation Data/Guage.TT_ShowAll
+Animation Data/Guage.TT_LastState
+Animation Data/Guage.TT_ShowGreen
+Animation Data/Guage.TT_ShowYellow
+Data Sources/Controlservice
+Page Transitions/Default Transitions
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_128x128.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_64x64.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_32x32.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_16x16.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_8x8.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_4x4.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_2x2.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_1x1.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_128x128.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_64x64.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_32x32.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_16x16.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_8x8.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_4x4.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_2x2.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_1x1.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_128x128.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_64x64.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_32x32.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_16x16.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_8x8.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_4x4.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_2x2.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_1x1.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_128x128.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_64x64.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_32x32.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_16x16.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_8x8.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_4x4.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_2x2.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_1x1.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_128x128.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_64x64.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_32x32.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_16x16.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_8x8.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_4x4.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_2x2.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_1x1.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_128x128.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_64x64.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_32x32.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_16x16.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_8x8.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_4x4.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_2x2.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_1x1.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds posX.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds negX.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds posY.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds negY.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds posZ.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds negZ.png
+Resource Files/Images/Cluster/ACC/ACC_roadLine.png
+Resource Files/Images/Cluster/ACC/ACC_bg.png
+Resource Files/Images/Cluster/ACC/ACC_designSketch.png
+Resource Files/Images/Cluster/ACC/ACC_farCar.png
+Resource Files/Images/Cluster/ACC/ACC_greenRoad.png
+Resource Files/Images/Cluster/ACC/ACC_mineCar.png
+Resource Files/Images/Cluster/ACC/ACC_road.png
+Resource Files/Images/Cluster/ACC/ACC_roadLineSingle1.png
+Resource Files/Images/Cluster/ACC/ACC_roadLineSingle.png
+Resource Files/Images/Cluster/ACC/ACC_blackBorder.png
+Resource Files/Images/Cluster/Media/Media_Design.png
+Resource Files/Images/Cluster/Media/Media_ProgressBar.png
+Resource Files/Images/Cluster/Media/Media_ProgressBarBg.png
+Resource Files/Images/Cluster/Media/Media_Album.png
+Resource Files/Images/Cluster/[AREA]   INFO.png
+Resource Files/Images/Cluster/background.png
+Resource Files/Images/Cluster/METER_AUTHENTIC_190419.png
+Resource Files/Images/Cluster/METER_AUTHENTIC_190419_pic.png
+Resource Files/Images/Cluster/METER_L.png
+Resource Files/Images/Cluster/METER_R.png
+Resource Files/Images/Cluster/pointer_L.png
+Resource Files/Images/Cluster/pointer_R.png
+Resource Files/Images/Cluster/ttList.png
+Resource Files/Images/Cluster/TTCrcCheckErrorFrame.png
+Resource Files/Images/Cluster/camera_area.png
+Resource Files/Images/mipmaps/DefaultTextureImage_512x512.png
+Resource Files/Images/mipmaps/DefaultTextureImage_256x256.png
+Resource Files/Images/mipmaps/DefaultTextureImage_128x128.png
+Resource Files/Images/mipmaps/DefaultTextureImage_64x64.png
+Resource Files/Images/mipmaps/DefaultTextureImage_32x32.png
+Resource Files/Images/mipmaps/DefaultTextureImage_16x16.png
+Resource Files/Images/mipmaps/DefaultTextureImage_8x8.png
+Resource Files/Images/mipmaps/DefaultTextureImage_4x4.png
+Resource Files/Images/mipmaps/DefaultTextureImage_2x2.png
+Resource Files/Images/mipmaps/DefaultTextureImage_1x1.png
+Resource Files/Images/DefaultBackground.png
+Resource Files/Images/DefaultTextureImage.png
+Resource Files/Scripts/autoSpd&Rpm.js
+Resource Files/Fonts/PingFang-Medium.ttf
+Textures/DefaultBackground
+Textures/Default Texture
+Textures/Default Cube Map Texture
+Textures/pointer_R
+Textures/[AREA]   INFO
+Textures/background
+Textures/METER_AUTHENTIC_190419
+Textures/METER_AUTHENTIC_190419_pic
+Textures/METER_L
+Textures/METER_R
+Textures/pointer_L
+Textures/ACC_bg
+Textures/ACC_designSketch
+Textures/ACC_farCar
+Textures/ACC_greenRoad
+Textures/ACC_mineCar
+Textures/ACC_road
+Textures/ACC_roadLine
+Textures/ACC_roadLineSingle
+Textures/ttList
+Textures/ACC_roadLineSingle1
+Textures/TTCrcCheckErrorFrame
+Textures/camera_area
+Textures/Media_Design
+Textures/Media_ProgressBar
+Textures/Media_ProgressBarBg
+Textures/ACC_blackBorder
+Textures/Media_Album
+Styles/Text Block 2D Style
+State Managers/TimeDisplay State Manager
+/austincluster

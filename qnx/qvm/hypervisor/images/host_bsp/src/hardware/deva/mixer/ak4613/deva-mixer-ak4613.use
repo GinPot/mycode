@@ -1,0 +1,31 @@
+
+%C - Mixer DLL for the AK4613 codec
+
+This is a DLL of the io-audio system.
+
+Configuration file options:
+    ak4643_i2c_dev=<value>                                   I2C device number corresponding to the AK4613 codec
+    ak4643_i2c_addr=<value>                                  I2C slave address corresponding to the AK4613 codec
+    ak4613_debug=<enable|disable>                            Enable register dumps (default:disable)
+    ak4613_out1=<enable|disable[:differential|single_ended]> Enable DAC output 1 (default: disable) and specify
+                                                             whether DAC output 1 is differential or single_ended
+    ...
+    ak4613_out6=<enable|disable[:differential|single_ended]> Enable DAC output 6 (default: disable) and specify
+                                                             whether DAC output 6 is differential or single_ended
+    ak4613_in1=<enable|disable[:differential|single-ended]>  Enable ADC input 1 (default: disable) and specify
+                                                             whether ADC input 1 is differential or single_ended
+    ak4613_in2=<enable|disable[:differential|single-ended]>  Enable ADC input 2 (default: disable) and specify
+                                                             whether ADC input 2 is differential or single_ended
+
+All codec options are to be included under the [ctrl] section for the audio card the
+mixer DLL is to be mounted under.
+
+Example:
+[ctrl]
+name=rcar-ak4613
+options=scu=1
+mixer_dll=ak4613                       # Load deva-mixer-ak4613.so
+ak4613_i2c_dev=2                       # /dev/i2c2
+ak4613_i2c_addr=16                     # 0x10
+ak4613_out1=enable:differential
+ak4613_in1=enable:differential

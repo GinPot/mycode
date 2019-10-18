@@ -1,0 +1,37 @@
+#Concatenate above, the BSP build file of your choosing
+
+[+script] arm-startup-script = {
+    # Set board device name for the installation disk that Hypervisor is installed onto (BSP build file may dictate this, or you could start the driver here instead). Include the suffix number on the end if you are sure what it will be (e.g. /dev/hd1), otherwise leave it off (e.g. /dev/hd) and the mountHVPartitions script will search for a disk with the expected partition layout (1 of type 11, 1 of type 177).
+    HV_DISK=/dev/hd
+
+    # Set board ethernet interface name (update this for your board)
+    ETH_IF=ravb0
+
+    # Renesas rcar BSP does not start dumper
+    display_msg "Starting dumper..."
+    dumper &
+
+# If passing-through DMA-capable devices, start smmuman here
+#    display_msg "Starting smmuman..."
+#    smmuman @/etc/myboard.smmu
+}
+
+
+########################
+## Extra binaries
+########################
+
+
+[perms=0444] /root/envset.sh {
+# Un-comment here and insert your PCI hardware module, if the board has one
+#export PCI_HW_MODULE=/lib/dll/pci/pci_hw-rcar-salvator-x.so
+}
+
+# Add your smmuman plugin .so into /lib/dll/ here
+
+# If passing-through DMA-capable devices, provide smmuman config files here
+# These are examples from Renesas R-CAR H3:
+#/etc/rcar3-h3_r11.smmu = ${QNX_TARGET}/etc/rcar3-h3_r11.smmu
+#/etc/rcar3-h3_r20.smmu = ${QNX_TARGET}/etc/rcar3-h3_r20.smmu
+
+#Concatenate below, the arch-specific common hypervisor build file

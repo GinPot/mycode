@@ -1,0 +1,8 @@
+<root>
+    <connection_adapter>
+        <name>C:\Program Files\Rightware\Kanzi 3_6_3_2514\Studio\Bin\KanziPreview.exe</name>
+        <bearer>connect.bearer.tcp</bearer>
+        <attribute name="host_ip" value="192.168.143.8"/>
+        <attribute name="host_port" value="2002"/>
+    </connection_adapter>
+</root>

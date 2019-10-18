@@ -1,0 +1,229 @@
+﻿Files:
+PropertyTypeLibrary/ConnectAction.Introspection.Controlservice.Commend
+PropertyTypeLibrary/ConnectTrigger.Instrospection.Controlservice.CommendNotice
+PropertyTypeLibrary/Controlservice.Commend.Arg_1
+PropertyTypeLibrary/Controlservice.Commend.Arg_2
+PropertyTypeLibrary/Controlservice.Commend.CommendID
+PropertyTypeLibrary/Controlservice.Commend.CommendType
+PropertyTypeLibrary/Controlservice.CommendNotice.NoticeArg_1
+PropertyTypeLibrary/Controlservice.CommendNotice.NoticeArg_2
+PropertyTypeLibrary/Controlservice.CommendNotice.NoticeID
+PropertyTypeLibrary/Controlservice.CommendNotice.NoticeType
+PropertyTypeLibrary/CubemapColor
+PropertyTypeLibrary/Diagnosis.AGLCPU
+PropertyTypeLibrary/Diagnosis.AGLMem
+PropertyTypeLibrary/Diagnosis.fps.Alexa_fps
+PropertyTypeLibrary/Diagnosis.fps.Cluster_fps
+PropertyTypeLibrary/Diagnosis.fps.IVI_fps
+PropertyTypeLibrary/Diagnosis.isCmdConnected
+PropertyTypeLibrary/Diagnosis.isShow
+PropertyTypeLibrary/Diagnosis.Progress
+PropertyTypeLibrary/Diagnosis.QNXCPU
+PropertyTypeLibrary/Diagnosis.QNXMem
+PropertyTypeLibrary/Diagnosis.rdata
+PropertyTypeLibrary/Diagnosis.Renderer
+PropertyTypeLibrary/Diagnosis.rwname
+PropertyTypeLibrary/Diagnosis.Shader
+PropertyTypeLibrary/Diagnosis.Tiler
+PropertyTypeLibrary/Diagnosis.wdata
+PropertyTypeLibrary/offset
+PropertyTypeLibrary/smoothing
+PropertyTypeLibrary/Texture2
+PropertyTypeLibrary/TextureCube
+PropertyTypeLibrary/TAG_PROPERTY_TYPE_Transparent
+Animation Clips/Animation Clip
+Screens/Screen/RootPage/BG/CPU/QNX/num
+Screens/Screen/RootPage/BG/CPU/QNX/unit
+Screens/Screen/RootPage/BG/CPU/QNX/Progress
+Screens/Screen/RootPage/BG/CPU/QNX/QNX_CPU1
+Screens/Screen/RootPage/BG/CPU/QNX/QNX_CPU2
+Screens/Screen/RootPage/BG/CPU/AGL/num
+Screens/Screen/RootPage/BG/CPU/AGL/unit
+Screens/Screen/RootPage/BG/CPU/AGL/Progress
+Screens/Screen/RootPage/BG/CPU/AGL/AGL_CPU1
+Screens/Screen/RootPage/BG/CPU/AGL/AGL_CPU2
+Screens/Screen/RootPage/BG/CPU/AGL/AGL_CPU3
+Screens/Screen/RootPage/BG/CPU/AGL/AGL_CPU4
+Screens/Screen/RootPage/BG/CPU/QNX
+Screens/Screen/RootPage/BG/CPU/AGL
+Screens/Screen/RootPage/BG/Memory/AGL/num
+Screens/Screen/RootPage/BG/Memory/AGL/unit
+Screens/Screen/RootPage/BG/Memory/AGL/Progress
+Screens/Screen/RootPage/BG/Memory/AGL/AGL_MemTotal
+Screens/Screen/RootPage/BG/Memory/QNX/num
+Screens/Screen/RootPage/BG/Memory/QNX/unit
+Screens/Screen/RootPage/BG/Memory/QNX/Progress
+Screens/Screen/RootPage/BG/Memory/QNX/QNX_MemTotal
+Screens/Screen/RootPage/BG/Memory/AGL
+Screens/Screen/RootPage/BG/Memory/QNX
+Screens/Screen/RootPage/BG/GPU/FPS/Alexa_fps
+Screens/Screen/RootPage/BG/GPU/FPS/IVI_fps
+Screens/Screen/RootPage/BG/GPU/FPS/Cluster_fps
+Screens/Screen/RootPage/BG/GPU/Renderer active/num
+Screens/Screen/RootPage/BG/GPU/Renderer active/unit
+Screens/Screen/RootPage/BG/GPU/Renderer active/Progress
+Screens/Screen/RootPage/BG/GPU/Tiler active/num
+Screens/Screen/RootPage/BG/GPU/Tiler active/unit
+Screens/Screen/RootPage/BG/GPU/Tiler active/Progress
+Screens/Screen/RootPage/BG/GPU/Shader Load/num
+Screens/Screen/RootPage/BG/GPU/Shader Load/unit
+Screens/Screen/RootPage/BG/GPU/Shader Load/Progress
+Screens/Screen/RootPage/BG/GPU/FPS
+Screens/Screen/RootPage/BG/GPU/Renderer active
+Screens/Screen/RootPage/BG/GPU/Tiler active
+Screens/Screen/RootPage/BG/GPU/Shader Load
+Screens/Screen/RootPage/BG/BG
+Screens/Screen/RootPage/BG/CPU
+Screens/Screen/RootPage/BG/Memory
+Screens/Screen/RootPage/BG/GPU
+Screens/Screen/RootPage/Controller/ConnectController
+Screens/Screen/RootPage/BG
+Screens/Screen/RootPage/Controller
+Screens/Screen/RootPage/QNX
+Screens/Screen/RootPage/AGL
+Screens/Screen/RootPage/Bus monitoring
+Screens/Screen/RootPage/Black
+Screens/Screen/<ResourceDictionaryInNode>
+Screens/Screen/RootPage
+Screens/Screen
+Material Types/VertexPhong
+Material Types/VertexPhongCube
+Material Types/VertexPhongMorph
+Material Types/VertexPhongSkinned
+Material Types/VertexPhongTextured
+Material Types/VertexPhongTexturedCube
+Material Types/VertexPhongTexturedMorph
+Material Types/VertexPhongTexturedSkinned
+Material Types/ColorTexture
+Material Types/DefaultBlit
+Material Types/FontDefault
+Material Types/MaskTexture
+Material Types/SweepTextures
+Material Types/Textured
+Material Types/Progress
+Materials/VertexPhongMaterial
+Materials/VertexPhongCubeMaterial
+Materials/VertexPhongMorphMaterial
+Materials/VertexPhongSkinnedMaterial
+Materials/VertexPhongTexturedMaterial
+Materials/VertexPhongTexturedCubeMaterial
+Materials/VertexPhongTexturedMorphMaterial
+Materials/VertexPhongTexturedSkinnedMaterial
+Materials/ColorTextureMaterial
+Materials/DefaultBlitMaterial
+Materials/FontDefaultMaterial
+Materials/MaskTextureMaterial
+Materials/SweepTexturesMaterial
+Materials/TexturedMaterial
+Materials/Progress
+Brushes/DefaultBackground
+Brushes/Black
+Brushes/Progress
+Brushes/Color Brush
+Data Sources/Controlservice
+Page Transitions/Default Transitions
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_128x128.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_16x16.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_1x1.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_2x2.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_32x32.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_4x4.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_64x64.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negX_8x8.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_128x128.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_16x16.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_1x1.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_2x2.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_32x32.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_4x4.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_64x64.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negY_8x8.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_128x128.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_16x16.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_1x1.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_2x2.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_32x32.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_4x4.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_64x64.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds negZ_8x8.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_128x128.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_16x16.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_1x1.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_2x2.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_32x32.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_4x4.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_64x64.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posX_8x8.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_128x128.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_16x16.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_1x1.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_2x2.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_32x32.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_4x4.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_64x64.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posY_8x8.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_128x128.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_16x16.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_1x1.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_2x2.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_32x32.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_4x4.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_64x64.png
+Resource Files/Images/cubemaps/mipmaps/DefaultCubeMap.dds posZ_8x8.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds posX.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds negX.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds posY.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds negY.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds posZ.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds negZ.png
+Resource Files/Images/Diagnosis/new/BG_new.png
+Resource Files/Images/Diagnosis/new/bg_bar progress_new.png
+Resource Files/Images/Diagnosis/矢量智能对象.png
+Resource Files/Images/Diagnosis/矢量智能对象-1.png
+Resource Files/Images/Diagnosis/矢量智能对象-2.png
+Resource Files/Images/Diagnosis/BG.png
+Resource Files/Images/Diagnosis/bg_CPU.png
+Resource Files/Images/Diagnosis/bg_CPU_1.png
+Resource Files/Images/Diagnosis/bg_form.png
+Resource Files/Images/Diagnosis/bg_memory.png
+Resource Files/Images/Diagnosis/bg_memory_1.png
+Resource Files/Images/Diagnosis/bg_progress.png
+Resource Files/Images/Diagnosis/bg_progress_1.png
+Resource Files/Images/Diagnosis/SYSTEM.png
+Resource Files/Images/Diagnosis/system_SYSTEM.png
+Resource Files/Images/mipmaps/DefaultTextureImage_128x128.png
+Resource Files/Images/mipmaps/DefaultTextureImage_16x16.png
+Resource Files/Images/mipmaps/DefaultTextureImage_1x1.png
+Resource Files/Images/mipmaps/DefaultTextureImage_256x256.png
+Resource Files/Images/mipmaps/DefaultTextureImage_2x2.png
+Resource Files/Images/mipmaps/DefaultTextureImage_32x32.png
+Resource Files/Images/mipmaps/DefaultTextureImage_4x4.png
+Resource Files/Images/mipmaps/DefaultTextureImage_512x512.png
+Resource Files/Images/mipmaps/DefaultTextureImage_64x64.png
+Resource Files/Images/mipmaps/DefaultTextureImage_8x8.png
+Resource Files/Images/DefaultBackground.png
+Resource Files/Images/DefaultTextureImage.png
+Resource Files/Images/new_BG.png
+Resource Files/Images/new_bg_bar progress.png
+Resource Files/Images/标注图(1).png
+Resource Files/Images/BG_516.png
+Resource Files/Images/bg_bar progress.png
+Resource Files/Images/bg_bar progress_1.png
+Resource Files/Images/BG_5_24.png
+Resource Files/Fonts/Roboto-Light.ttf
+Resource Files/Fonts/Roboto-Regular.ttf
+Resource Files/Fonts/Roboto-Condensed_0.ttf
+Textures/DefaultBackground
+Textures/Default Texture
+Textures/Default Cube Map Texture
+Textures/矢量智能对象
+Textures/矢量智能对象-1
+Textures/矢量智能对象-2
+Textures/BG_new
+Textures/bg_bar progress_new
+Textures/new_bg_bar progress
+Textures/new_BG
+Textures/BG_516
+Textures/BG_5_24
+Styles/Text Block 2D Style
+/diagnosis

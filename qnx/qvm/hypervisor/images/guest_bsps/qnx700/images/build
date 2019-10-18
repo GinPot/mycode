@@ -1,0 +1,625 @@
+[image=0x80000000]
+
+# Select one of armle-v7 or aarch64le, for 32-bit or 64-bit guest, respectively
+# [virtual=armle-v7,elf] .bootstrap = {
+[virtual=aarch64le,elf] .bootstrap = {
+        # Note here the startup driver is using it's mini-driver for the PL011, so the
+        # qvm config must include this hardware, even if devc-virtio is being used as
+        # the main console driver
+	[+keeplinked]startup-armv8_fm -H
+	[+keeplinked] PATH=/proc/boot:/sbin:/bin:/usr/bin:/opt/bin/sbin:/usr/sbin KWHO=xguest procnto-smp-instr -v
+}
+
+[+script] .startup = {
+	display_msg Welcome to QNX Neutrino 7.0 Hypervisor Guest on ARM
+
+        #######################################################################
+        ## WatchDog utility
+        ## If guest is configured with a vdev-wdt-* device then the 'wdtkick'
+        ## can be used to enable it, as well as give it the required regular
+        ## kick. 
+        #######################################################################
+        #/scripts/watchdog-start.sh &
+
+# These env variables inherited by all the programs which follow
+        SYSNAME=nto
+        TERM=xterm
+        PATH=/proc/boot:/sbin:/bin:/usr/bin:/opt/bin/sbin:/usr/sbin
+        LD_LIBRARY_PATH=/proc/boot:/usr/lib/graphics/rcarm3_guest:/lib:/usr/lib:/lib/dll:/opt/lib:/lib/dll/pci
+
+        PCI_HW_MODULE=/lib/dll/pci/pci_hw-fdt.so
+        PCI_BKWD_COMPAT_MODULE=/lib/dll/pci/pci_bkwd_compat.so
+        PCI_SLOG_MODULE=/lib/dll/pci/pci_slog.so
+        PCI_DEBUG_MODULE=/lib/dll/pci/pci_debug.so
+        PCI_BASE_VERBOSITY=2
+
+#-------------------------------------------------------------------------------
+	pipe &
+	devc-pty -n32 &
+	#needed by slogger2
+	random -p &
+	waitfor /dev/random
+        dumper &
+	slogger2 &
+	waitfor /dev/slog2
+
+	# Note also that at least 1 vdev must be configured as a PCI device, else pci-server
+	# will crash (HW-15630). So we leave it commented-out by default until that is fixed.
+	#pci-server
+
+#       NOTE: If using devc-virtio, it is not necessary to include another serial
+#             driver, though the startup mini-driver may use this hardware.
+#        # Initialise the console
+#         devc-serpl011 -e -F  0x1C090000,37
+#         reopen /dev/ser1
+
+        # Here we use virtio-console as default console
+        # Initialise the console
+        devc-virtio 0x20000000,42
+        # After the reopen, all subsequent processes' stdin/out/err will connect to the device specified
+        reopen /dev/vcon1
+
+        /scripts/detectAndRunCustomStart.sh
+
+#-------------------------------------------------------------------------------
+        display_msg "Virtual networking can be started by running /scripts/network-start.sh"
+        display_msg "   (this requires vdev-virtio-net is configured in this qvm)"
+        display_msg ""
+        display_msg "Virtual shared memory device demo driver can be started by running /scripts/shmem-start.sh"
+        display_msg "   (this requires vdev-shmem is configured in this qvm)"
+        display_msg ""
+        display_msg "Note: the scripts above assume that you have located your virtual devices at particular loc/intr values"
+        display_msg "      that match the values passed to the corresponding driver"
+        display_msg ""
+
+        [+session] ksh /proc/boot/.console.sh
+}
+
+# A script to detect/run a custom startup script
+[type=file uid=0 gid=0 perms=0755] /scripts/detectAndRunCustomStart.sh = {
+#!/bin/sh
+
+    if [ -e /scripts/custom.sh ]; then
+            echo "Kicking off /scripts/custom.sh..."
+            /scripts/custom.sh
+    fi
+}
+
+[perms=0755] /scripts/custom.sh = {
+#!/bin/sh
+    # Graphics
+    echo "Starting screen ..."
+    i2c-rcar-A -p0xe66D8000 -i51 -v --u4
+    export GRAPHICS_ROOT=/usr/lib/graphics/rcarm3_guest/
+    screen -c $GRAPHICS_ROOT/graphics.conf
+    ls /dev/screen/gpus/gpu-1/egl
+    slay -f i2c-rcar-A
+}
+
+[perms=0644] .console.sh = {
+    while :
+    do
+        ksh -shl
+        echo "Restarting root shell"
+        echo "If you want to shut down the guest vm, use the 'shutdown' utility"
+        sleep 0.1
+    done
+}
+
+[type=link] /bin/sh=/proc/boot/ksh
+[type=link] /bin/ksh=/proc/boot/ksh
+[type=link] /dev/console=/dev/ser1
+[type=link] /tmp=/dev/shmem
+[type=link] /usr/lib/ldqnx.so.2=/proc/boot/libc.so
+[type=link] /usr/lib/ldqnx-64.so.2=/proc/boot/libc.so
+
+# Shared libraries
+libc.so
+libtracelog.so
+libslog2.so
+libslog2parse.so
+libm.so
+libz.so
+
+###########################################################################
+## uncomment for PCIe server Support
+###########################################################################
+libpci.so
+# Take pci modules from QNX_TARGET
+[-followlink]/lib/dll/pci=${QNX_TARGET}/${PROCESSOR}/lib/dll/pci
+
+# Needed by pci_hw-fdt.so
+libfdt.so
+
+# This will eventually also come from QNX_TARGET, but for now is shipped with the
+# guest BSPs
+/lib/dll/pci/pci_hw-fdt.so=dll/pci/pci_hw-fdt.so
+
+# Needed by fdisk
+libncursesw.so
+
+# screen composition manager support
+/lib/libimg.so=libimg.so
+
+# uncomment for Image Loading
+# img_codec_bmp.so
+# img_codec_gif.so
+# img_codec_jpg.so
+# img_codec_png.so
+# img_codec_sgi.so
+# img_codec_tga.so
+# img_codec_pcx.so
+# img_codec_tif.so
+# img_codec_wbmp.so
+# libgif.so.5
+# libjpeg.so.4
+# libpng16.so.0
+# libtiff.so.5
+# libz.so.2
+# liblzma.so.5
+# libpng.so
+
+# Graphics support - screen
+screen-debug.so=${BASE}/screen_archive/aarch64le/lib/dll/screen-debug.so
+screen-gles1.so=${BASE}/screen_archive/aarch64le/lib/dll/screen-gles1.so
+screen-gles2.so=${BASE}/screen_archive/aarch64le/lib/dll/screen-gles2.so
+screen-sw.so=${BASE}/screen_archive/aarch64le/lib/dll/screen-sw.so
+screen-stdbuf.so=${BASE}/screen_archive/aarch64le/lib/dll/screen-stdbuf.so
+screen-roguetq.so=${BASE}/screen_archive/aarch64le/lib/dll/screen-roguetq.so
+screen-rcar3-alloc.so=${BASE}/screen_archive/aarch64le/lib/dll/screen-rcar3-alloc.so
+
+libswblit.so=${BASE}/screen_archive/aarch64le/usr/lib/libswblit.so
+
+libEGL.so=${BASE}/screen_archive/aarch64le/usr/lib/libEGL.so
+libGLESv1_CL.so=${BASE}/screen_archive/aarch64le/usr/lib/libGLESv1_CL.so
+libGLESv1_CM.so=${BASE}/screen_archive/aarch64le/usr/lib/libGLESv1_CM.so
+libGLESv2.so=${BASE}/screen_archive/aarch64le/usr/lib/libGLESv2.so
+libWFD.so=${BASE}/screen_archive/aarch64le/usr/lib/libWFD.so 
+libgestures.so
+libmemobj.so=${BASE}/screen_archive/aarch64le/lib/libmemobj.so
+libscrmem.so=${BASE}/screen_archive/aarch64le/lib/libscrmem.so
+libinputevents.so
+libkalman.so
+libscreen.so=${BASE}/screen_archive/aarch64le/usr/lib/libscreen.so
+libmtouch-calib.so
+
+libcapture.so=${BASE}/screen_archive/aarch64le/usr/lib/libcapture.so
+libcapture.so.1=${BASE}/screen_archive/aarch64le/usr/lib/libcapture.so.1
+libcapture-soc-rcar3.so=${BASE}/screen_archive/aarch64le/usr/lib/libcapture-soc-rcar3.so
+libcapture-board-renesas-salvator-x.so=${BASE}/screen_archive/aarch64le/usr/lib/libcapture-board-renesas-salvator-x.so
+libcapture-decoder-adv7482.so=${BASE}/screen_archive/aarch64le/usr/lib/libcapture-decoder-adv7482.so
+libcapture-usb-uvc.so=${BASE}/screen_archive/aarch64le/usr/lib/libcapture-usb-uvc.so
+
+###########################################################################
+## Graphics base libraries
+###########################################################################
+/lib/dll/libwfdcfg-sample.so=${BASE}/screen_archive/aarch64le/lib/dll/libwfdcfg-sample.so
+/usr/lib/libCL.so=${BASE}/screen_archive/aarch64le/usr/lib/libCL.so
+
+###########################################################################
+## Input libraries
+###########################################################################
+/lib/libmtouch-devi.so=libmtouch-devi.so
+/lib/libmtouch-fake.so=libmtouch-fake.so
+/lib/libmtouch-hid.so=libmtouch-hid.so
+/lib/libmtouch-inject.so=libmtouch-inject.so
+
+###########################################################################
+## Video capture libraries
+###########################################################################
+/usr/lib/libcapture-simulated.so=${BASE}/screen_archive/aarch64le/usr/lib/libcapture-simulated.so
+
+###########################################################################
+## Board specific graphics libraries
+###########################################################################
+/usr/lib/graphics/rcarm3_guest/libIMGGLESv1_CM.so=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/libIMGGLESv1_CM.so
+/usr/lib/graphics/rcarm3_guest/libIMGGLESv2.so=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/libIMGGLESv2.so
+/usr/lib/graphics/rcarm3_guest/libIMGegl.so=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/libIMGegl.so
+/usr/lib/graphics/rcarm3_guest/libPVRScopeServices.so=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/libPVRScopeServices.so
+/usr/lib/graphics/rcarm3_guest/libWFDrcar3.so=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/libWFDrcar3.so
+/usr/lib/graphics/rcarm3_guest/libglslcompiler.so=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/libglslcompiler.so
+/usr/lib/graphics/rcarm3_guest/libpvrSCREEN_WSEGL.so=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/libpvrSCREEN_WSEGL.so
+/usr/lib/graphics/rcarm3_guest/libsrv_init.so=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/libsrv_init.so
+/usr/lib/graphics/rcarm3_guest/libsrv_km.so=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/libsrv_km.so
+/usr/lib/graphics/rcarm3_guest/libsrv_um.so=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/libsrv_um.so
+/usr/lib/graphics/rcarm3_guest/libusc.so=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/libusc.so
+/usr/lib/graphics/rcarm3_guest/libwfdcfg-salvator-x-m3.so=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/libwfdcfg-salvator-x-m3.so
+
+###########################################################################
+## uncomment for Networking
+###########################################################################
+libsocket.so
+devnp-virtio.so
+librpc.so
+libcrypto.so
+
+###########################################################################
+## BLOCK driver support
+###########################################################################
+libcam.so
+io-blk.so
+cam-disk.so
+fs-qnx6.so
+fs-dos.so
+
+# Executables
+[data=c]
+devc-serpl011
+devc-virtio
+devc-pty
+ksh
+uname
+ls
+sleep
+pidin
+cp
+mkdir
+ls
+pipe
+pidin
+rm
+uname
+slogger2
+random
+slog2info
+slay
+mount
+umount
+shutdown
+less
+setconf
+getconf
+login
+qconn
+/usr/bin/pdebug=pdebug
+which
+grep
+find
+in32
+out32
+rtc
+date
+fdisk
+hd
+io
+use
+more
+tracelogger
+traceprinter
+cat
+ln
+waitfor
+vi
+sed
+grep
+df
+du
+dd
+top
+on
+find
+which
+dumper
+
+###########################################################################
+## I2C for screen
+###########################################################################
+i2c-rcar-A=${BASE}/images/host_bsp/prebuilt/aarch64le/sbin/i2c-rcar-A
+
+###########################################################################
+## scaling.conf
+###########################################################################
+[search=${QNX_TARGET}/etc/system/config]/etc/system/config/scaling.conf=scaling.conf
+
+###########################################################################
+## keyboard
+###########################################################################
+[search=${QNX_TARGET}/usr/share/keyboard]/usr/share/keyboard/en_US_101.kbd=en_US_101.kbd
+
+###########################################################################
+## Screen executables
+###########################################################################
+/sbin/screen=${BASE}/screen_archive/aarch64le/sbin/screen
+/usr/bin/gles1-vsync=${BASE}/screen_archive/aarch64le/usr/bin/gles1-vsync
+/usr/bin/gles2-gears=${BASE}/screen_archive/aarch64le/usr/bin/gles2-gears
+/usr/bin/sw-vsync=${BASE}/screen_archive/aarch64le/usr/bin/sw-vsync
+
+/usr/bin/calib-touch=${BASE}/screen_archive/aarch64le/usr/bin/calib-touch
+/usr/bin/events=${BASE}/screen_archive/aarch64le/usr/bin/events
+
+###########################################################################
+## Graphics base executables
+###########################################################################
+/usr/bin/dpy-vsync=${BASE}/screen_archive/aarch64le/usr/bin/dpy-vsync
+/usr/bin/egl-configs=${BASE}/screen_archive/aarch64le/usr/bin/egl-configs
+/usr/bin/gles1-gears=${BASE}/screen_archive/aarch64le/usr/bin/gles1-gears
+/usr/bin/gles3-gears=${BASE}/screen_archive/aarch64le/usr/bin/gles3-gears
+/usr/bin/screen-gles2-tools=${BASE}/screen_archive/aarch64le/usr/bin/screen-gles2-tools
+/usr/bin/screenshot=${BASE}/screen_archive/aarch64le/usr/bin/screenshot
+/usr/bin/sharewin=${BASE}/screen_archive/aarch64le/usr/bin/sharewin
+/usr/bin/win-vsync=${BASE}/screen_archive/aarch64le/usr/bin/win-vsync
+
+###########################################################################
+## Fonts
+###########################################################################
+/usr/lib/libfontconfig.so=libfontconfig.so
+/usr/lib/libfreetype.so=libfreetype.so
+/usr/bin/font-freetype=${BASE}/screen_archive/aarch64le/usr/bin/font-freetype
+
+###########################################################################
+## Image Codecs
+###########################################################################
+[search=${QNX_TARGET}/etc/system/config]/etc/system/config/img.conf=img.conf
+
+###########################################################################
+## Inputs
+###########################################################################
+/usr/sbin/mtouch=${BASE}/screen_archive/aarch64le/usr/sbin/mtouch
+
+###########################################################################
+## Video capture executables
+###########################################################################
+/usr/bin/vcapture-demo=${BASE}/screen_archive/aarch64le/usr/bin/vcapture-demo
+
+###########################################################################
+## Board specific graphics files
+###########################################################################
+/usr/lib/graphics/rcarm3_guest/graphics.conf=${BASE}/screen_archive/aarch64le/usr/lib/graphics/rcarm3_guest/graphics.conf
+
+/usr/lib/terminfo/x=../../usr/lib/terminfo/x
+
+#Shared memory virtual device demonstration utility
+shmem-guest
+
+[perms=0755] /scripts/shmem-start.sh = {
+#!/bin/sh
+
+#NOTE: the virtual device must make the location (loc) and interrupt (intr) option match the values here
+shmem-guest 0x1c050000 38
+
+}
+
+/etc/profile={
+export TERM=qansi
+export PS1="[armv8 guest QNX 7.0]% "
+
+if [ -e /etc/custom-profile-env ]; then
+        echo "Executing /etc/custom-profile-env"
+        . /etc/custom-profile-env
+fi
+
+}
+
+###########################################################################
+## PCI support
+###########################################################################
+pci-server
+pci-tool
+rsrcdb_query
+/etc/system/config/pci/pcidatabase.com-tab_delimited.txt=../../etc/system/config/pci/pcidatabase.com-tab_delimited.txt
+
+stty
+
+###########################################################################
+## Virtio blk support
+###########################################################################
+[uid=0 gid=0 perms=0755]
+devb-virtio
+mkqnx6fs
+mkdosfs
+chkqnx6fs
+chkdosfs
+sync
+
+###########################################################################
+## network support
+###########################################################################
+io-pkt-v6-hc
+nicinfo
+ifconfig
+ftp
+ping
+fs-nfs3
+inetd
+if_up
+tcpdump
+arp
+netstat
+
+## dhclient support
+dhclient
+[search=${QNX_TARGET}/sbin perms=a+x] /sbin/dhclient-script=dhclient-script
+[search=${QNX_TARGET}/etc]/etc/dhclient.conf=dhclient.conf
+route
+hostname
+mv
+
+[perms=0755] /scripts/network-start.sh = {
+#!/bin/sh
+
+        # Note for arm guests, we're using MMIO mode for vdev's (instead of PCI)
+        # Values for MMIO options must match those provided in the vdev configuration (or suitably translated if needed)
+	# In the qnx700-guest.qvmconf that comes with this BSP, there are 2 virtio-net devices
+	#  provided - one for guest-to-host (@0x1c0c0000,40), and one for guest-to-guest (@0x20040000,43). 
+	#  Start them both here.
+	echo "Starting virtio networking..."
+	io-pkt-v6-hc -d virtio smem=0x1c0c0000,irq=40 -d virtio smem=0x20040000,irq=43
+
+	echo "Starting dhcp..."
+	if_up -p vt0
+	dhclient -m -lf /dev/shmem/dhclient.leases -pf /dev/shmem/dhclient.pid -nw vt0
+
+	# Assign a static IP address for the guest-to-guest device, convention here is:
+	#  qnx7 guest: 192.168.10.1/24
+	#  qnx66 guest: 192.168.10.2/24
+	ifconfig vt1 192.168.10.1/24
+
+	echo "Starting inetd..."
+	inetd /proc/boot/inetd.conf
+
+	echo "Starting ssh services..."
+	/scripts/ssh-start.sh &
+
+}
+
+###########################################################################
+## watchdog support
+###########################################################################
+wdtkick
+[perms=0755] /scripts/watchdog-start.sh = {
+#!/bin/sh
+
+#######################################################################
+## WatchDog utility
+## If guest is configured with a vdev-wdt-* device then the 'wdtkick'
+## can be used to enable it, as well as give it the required regular
+## kick. 
+#######################################################################
+
+# Here, we assume the vdev has been configured with a 'loc' option set to
+# so that it is found at the base addr of 0x1C0F0000.
+# Writing value of 3 (0'b11) to offset 8 enables the watchdog
+# The value written to offset 0 determines the timeout
+
+# Kick every second & timeout set to 3 seconds (actually 6 seconds since the timer counts down twice & asserts the reset on the second expiry)
+wdtkick -v -a 0x1C0F0000 -t 1000 -E 8:3 -W 0:0x47868C0
+}
+
+[perms=0755] /scripts/watchdog-stop.sh = {
+#!/bin/sh
+ 
+# Here, we assume the vdev has been configured with a 'loc' option set to
+# so that it is found at the base addr of 0x1C0F0000.
+
+# To stop the watchdog, first bring down any kicker utilities
+slay -f wdtkick
+
+# Then, write value of 0 to control register (base + 8) to disable it
+io 32 0x1C0F0008 0
+
+}
+
+###########################################################################
+## inetd support
+###########################################################################
+/usr/sbin/inetd=inetd
+/bin/login=login
+/bin/passwd=passwd
+/etc/group=${QNX_TARGET}/etc/group
+/etc/hosts=${QNX_TARGET}/etc/hosts
+/etc/services=${QNX_TARGET}/etc/services
+/etc/passwd=${QNX_TARGET}/etc/passwd
+/etc/esh = {
+}
+
+inetd.conf = {
+ssh stream tcp nowait root /usr/sbin/sshd in.sshd -i
+}
+
+###########################################################################
+## sshd support
+###########################################################################
+/usr/sbin/sshd=sshd
+/usr/bin/scp=scp
+/usr/bin/ssh=ssh
+[uid=0 gid=0 perms=0644 search=${QNX_TARGET}/etc/ssh] /etc/ssh/ssh_known_hosts=ssh_known_hosts
+
+[uid=0 gid=0 perms=0644] sshd_config={
+Protocol 2
+LoginGraceTime 600
+PermitRootLogin yes             # NOT SECURE, FOR DEBUGGING
+PermitEmptyPasswords yes        # NOT SECURE, FOR DEBUGGING
+UsePrivilegeSeparation no       # NOT SECURE, FOR DEBUGGING
+Subsystem       sftp    /usr/libexec/sftp-server
+}
+
+ssh-keygen
+mkdir
+chmod
+touch
+
+[perms=0640] /etc/shadow = {
+root:E4m.vvfkKBbRo:1231323780:0:0
+}
+
+[perms=0644] /etc/passwd = {
+root:x:0:0:Superuser:/root:/bin/sh
+sshd:x:15:6:sshd:/var/chroot/sshd:/bin/false
+}
+
+/root/.profile = {
+export SYSNAME=nto
+export TERM=xterm
+export PATH=/proc/boot:/sbin:/bin:/usr/bin:/opt/bin/sbin:/usr/sbin
+export LD_LIBRARY_PATH=/proc/boot:/usr/lib/graphics/rcarm3_guest:/lib:/usr/lib:/lib/dll:/opt/lib:/lib/dll/pci
+
+export PCI_HW_MODULE=/lib/dll/pci/pci_hw-fdt.so
+export PCI_BKWD_COMPAT_MODULE=/lib/dll/pci/pci_bkwd_compat.so
+export PCI_SLOG_MODULE=/lib/dll/pci/pci_slog.so
+export PCI_DEBUG_MODULE=/lib/dll/pci/pci_debug.so
+export PCI_BASE_VERBOSITY=2
+}
+
+[perms=0755] /scripts/ssh-start.sh = {
+#!/bin/sh
+
+with_umask ()
+\{
+	local oldmask ret
+	[ "$#" -ge 1 ] || return
+
+	oldmask=$(umask) || return
+	umask "$1" || return
+	shift
+
+	ret=0
+	"$@" || ret=$?
+
+	umask "$\{oldmask?\}"
+	return "$\{ret:?\}"
+\}
+
+tools_ssh_keygen ()
+\{
+	local ssh_etcdir ssh_vardir type filename etclink varkey
+	ssh_etcdir="/etc/ssh"
+	ssh_vardir="/var/etc/ssh"
+
+	for type in rsa
+	do
+		filename="ssh_host_$\{type:?\}_key"
+		etclink="$\{ssh_etcdir?\}/$\{filename:?\}"
+		varkey="$\{ssh_vardir?\}/$\{filename:?\}"
+
+		if [ ! -f "$\{etclink:?\}" ]  # link currently invalid
+		then
+			ssh-keygen -t "$\{type:?\}" -N '' -f "$\{varkey:?\}" || return
+		fi
+	done
+\}
+
+tools_sshd ()
+\{
+	local x
+	\{
+		cp /proc/boot/sshd_config /etc/ssh/
+		with_umask 022 tools_ssh_keygen
+		ssh_path=$(command -v sshd) && "$ssh_path"
+	\} &
+\}
+
+#This script is intended to run once/boot only, at startup
+running=/dev/shmem/ssh-start.run
+[ -e $running ] && exit
+
+tools_sshd;
+
+touch $running
+unset running
+
+}
+
+[perms=0755 uid=0 gid=0 type=dir] /var/chroot/sshd
+[type=link] /etc/ssh = /dev/shmem
+[type=link] /var/etc/ssh = /dev/shmem
+

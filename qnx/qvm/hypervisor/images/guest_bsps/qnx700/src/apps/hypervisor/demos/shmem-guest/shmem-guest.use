@@ -1,0 +1,9 @@
+%C	- shared memory example program from a guest system
+
+Running this in a guest system will create a connection to a hypervisor
+shared memory object called "testing". Anything you type at this program's
+standard input will be sent to all other clients connected to "testing" and
+everything typed at their stdin's will reported on this program's standard
+output.
+
+Type "quit" to cause the program to cleanly terminate.

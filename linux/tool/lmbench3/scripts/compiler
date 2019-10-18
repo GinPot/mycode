@@ -1,0 +1,22 @@
+#!/bin/sh
+
+#source /opt/poky/2.4.2/environment-setup-aarch64-poky-linux
+#CC=${CC}
+
+source ~/work/m3/m3_qnx_agl_new/build/qnx700/qnxsdp-env.sh
+CC=aarch64-unknown-nto-qnx7.0.0-gcc
+
+if [ "X$CC" != "X" ] && echo "$CC" | grep -q '`'
+then
+    CC=
+fi
+
+if [ X$CC = X ]
+then	CC=cc
+	for p in `echo $PATH | sed 's/:/ /g'`
+	do	if [ -f $p/gcc ]
+		then	CC=gcc
+		fi
+	done
+fi
+echo $CC

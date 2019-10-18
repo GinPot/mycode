@@ -1,0 +1,8 @@
+%C : hijack screen touch events.
+
+Usage :
+%C [Display]
+
+Display:
+This is display enumaration index, 0,1,2,...[i.e. 1st display, 2nd display, 3rd display]
+Don't confuse this with wfd display ID, 1,2,4,...

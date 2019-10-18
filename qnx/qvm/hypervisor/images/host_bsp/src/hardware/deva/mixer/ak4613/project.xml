@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<module name="deva-ctrl-ak4613">
+  <classification>Driver</classification>
+  <description>
+    <short>Generic Audio Codec for the Asahi Kasei AK4613</short>
+    <abstract><![CDATA[
+			The deva-mixer-ak4613 shared object is responsible for configuring and operating an Asahi Kasei AK4613 audio codec device under the indirect control of the QNX Sound Architecture (io-audio). This driver is launched at the request of audio drivers (deva-ctrl-*) for hardware which includes an AK4613 codec.
+	        ]]></abstract>
+  </description>
+  <supports>
+    <availability>
+      <os name="nto">
+        <cpu isa="ppc">
+          <byteOrder>be</byteOrder>
+          <byteOrder>be.spe</byteOrder>
+        </cpu>
+        <cpu isa="sh">
+          <byteOrder>le</byteOrder>
+        </cpu>
+        <cpu isa="arm">
+          <byteOrder>le</byteOrder>
+          <byteOrder>le.v7</byteOrder>
+        </cpu>
+        <cpu isa="x86"/>
+        <cpu isa="mips">
+          <byteOrder>le</byteOrder>
+          <byteOrder>be</byteOrder>
+        </cpu>
+      </os>
+    </availability>
+    <availability supported="false">
+      <cpu isa="arm">
+        <byteOrder>be</byteOrder>
+      </cpu>
+    </availability>
+  </supports>
+  <contents>
+    <component id="ak4613" generated="true">
+      <location basedir="nto/ppc/dll.be">deva-mixer-ak4613.so</location>
+      <location basedir="nto/ppc/dll.be.spe">deva-mixer-ak4613.so</location>
+      <location basedir="nto/sh/dll.le">deva-mixer-ak4613.so</location>
+      <location basedir="nto/arm/dll.le">deva-mixer-ak4613.so</location>
+      <location basedir="nto/arm/dll.le.v7">deva-mixer-ak4613.so</location>
+      <location basedir="nto/x86/dll">deva-mixer-ak4613.so</location>
+      <location basedir="nto/mips/dll.le">deva-mixer-ak4613.so</location>
+      <location basedir="nto/mips/dll.be">deva-mixer-ak4613.so</location>
+    </component>
+  </contents>
+  <requires>
+    <part build="false" location="services/audio"/>
+  </requires>
+</module>

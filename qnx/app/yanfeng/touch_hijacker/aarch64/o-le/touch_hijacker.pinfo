@@ -1,0 +1,9 @@
+STATE=Experimental Release
+INSTALLDIR=aarch64le/usr/bin/
+INSTALLNAME=touch_hijacker
+NAME=touch_hijacker
+USER=root
+HOST=qualcommla
+DATE=2019/01/18-08:03:59-UTC
+TAGID==local
+DESCRIPTION=touch_hijacker

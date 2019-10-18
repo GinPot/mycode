@@ -1,0 +1,298 @@
+﻿Files:
+PropertyTypeLibrary/ContactImage
+PropertyTypeLibrary/ContactName
+PropertyTypeLibrary/CubemapColor
+PropertyTypeLibrary/fpsValue
+PropertyTypeLibrary/PhoneNumber
+PropertyTypeLibrary/RPM
+PropertyTypeLibrary/RPM_1
+PropertyTypeLibrary/Speed
+PropertyTypeLibrary/Speed_1
+PropertyTypeLibrary/TextureCube
+PropertyTypeLibrary/TurnSignalOn
+PropertyTypeLibrary/TAG_PROPERTY_TYPE_Transparent
+Animation Clips/Animation Clip
+Animation Clips/Take 001
+Animation Clips/Take 001_1
+Animation Clips/Take 001_2
+Animation Clips/Test
+Animation Clips/NeedleTest
+Screens/Screen/RootPage/Cluster/Navigation/<ResourceDictionaryInNode>
+Screens/Screen/RootPage/Cluster/Navigation/Navigation
+Screens/Screen/RootPage/Cluster/Car/CarViewport/CarControl/Button 2D/Image
+Screens/Screen/RootPage/Cluster/Car/CarViewport/CarControl/Button 2D_1/Image
+Screens/Screen/RootPage/Cluster/Car/CarViewport/CarControl/Button 2D_2/Image
+Screens/Screen/RootPage/Cluster/Car/CarViewport/CarControl/Button 2D_3/Image
+Screens/Screen/RootPage/Cluster/Car/CarViewport/CarControl/Button 2D
+Screens/Screen/RootPage/Cluster/Car/CarViewport/CarControl/Button 2D_1
+Screens/Screen/RootPage/Cluster/Car/CarViewport/CarControl/Button 2D_2
+Screens/Screen/RootPage/Cluster/Car/CarViewport/CarControl/Button 2D_3
+Screens/Screen/RootPage/Cluster/Car/CarViewport/car
+Screens/Screen/RootPage/Cluster/Car/CarViewport/CarControl
+Screens/Screen/RootPage/Cluster/Car/<ResourceDictionaryInNode>
+Screens/Screen/RootPage/Cluster/Car/CarViewport
+Screens/Screen/RootPage/Cluster/Contacts/ContactsList/ContactItem
+Screens/Screen/RootPage/Cluster/Contacts/ContactsList/ContactItem_1
+Screens/Screen/RootPage/Cluster/Contacts/ContactsList/ContactItem_2
+Screens/Screen/RootPage/Cluster/Contacts/ContactsList/ContactItem_3
+Screens/Screen/RootPage/Cluster/Contacts/ContactsList/ContactItem_4
+Screens/Screen/RootPage/Cluster/Contacts/ContactsList/ContactItem_5
+Screens/Screen/RootPage/Cluster/Contacts/<ResourceDictionaryInNode>
+Screens/Screen/RootPage/Cluster/Contacts/ContactsList
+Screens/Screen/RootPage/Cluster/Viewport 2D/Gauges
+Screens/Screen/RootPage/Cluster/Viewport 2D/icons_toprow
+Screens/Screen/RootPage/Cluster/Welcome/Welcome Text/Title
+Screens/Screen/RootPage/Cluster/Welcome/Welcome Text/Subtitle
+Screens/Screen/RootPage/Cluster/Welcome/Logo
+Screens/Screen/RootPage/Cluster/Welcome/Welcome Text
+Screens/Screen/RootPage/Cluster/MenuControl/PreviousPage/Previous
+Screens/Screen/RootPage/Cluster/MenuControl/MenuToggle/MenuText
+Screens/Screen/RootPage/Cluster/MenuControl/NextPage/Next
+Screens/Screen/RootPage/Cluster/MenuControl/PreviousPage
+Screens/Screen/RootPage/Cluster/MenuControl/MenuToggle
+Screens/Screen/RootPage/Cluster/MenuControl/NextPage
+Screens/Screen/RootPage/Cluster/BG
+Screens/Screen/RootPage/Cluster/Navigation
+Screens/Screen/RootPage/Cluster/Car
+Screens/Screen/RootPage/Cluster/Contacts
+Screens/Screen/RootPage/Cluster/Viewport 2D
+Screens/Screen/RootPage/Cluster/Welcome
+Screens/Screen/RootPage/Cluster/MenuControl
+Screens/Screen/RootPage/Cluster/TurnSignalLeft
+Screens/Screen/RootPage/Cluster/TurnSignalRight
+Screens/Screen/RootPage/Cluster/<ResourceDictionaryInNode>
+Screens/Screen/RootPage/Cluster/fps
+Screens/Screen/RootPage/Cluster/Speed
+Screens/Screen/RootPage/Camera_Button
+Screens/Screen/RootPage/Test_Button
+Screens/Screen/RootPage/Cluster
+Screens/Screen/<ResourceDictionaryInNode>
+Screens/Screen/RootPage
+Screens/Screen
+Material Types/FontDefault
+Material Types/Phong
+Material Types/PhongCube
+Material Types/PhongSkinned
+Material Types/PhongTextured
+Material Types/PhongTexturedCube
+Material Types/PhongTexturedSkinned
+Material Types/Textured
+Materials/CarBlack
+Materials/CarChrome
+Materials/CarHeadlight
+Materials/CarInterior
+Materials/CarLicense
+Materials/CarMainBody
+Materials/CarRim
+Materials/CarTaillight
+Materials/CarTire
+Materials/CarWindow
+Materials/FontDefaultMaterial
+Materials/GaugeNeedle
+Materials/GaugeOuterRim
+Materials/GaugeRPM
+Materials/GaugeSpeed
+Materials/Headlights
+Materials/Letter_1
+Materials/PhongCubeMaterial
+Materials/PhongMaterial
+Materials/PhongSkinnedMaterial
+Materials/PhongTexturedCubeMaterial
+Materials/PhongTexturedMaterial
+Materials/PhongTexturedSkinnedMaterial
+Materials/Shadow
+Materials/TexturedMaterial
+Brushes/DefaultBackground
+Brushes/Color Brush
+Brushes/Color Brush_1
+Brushes/camera_button
+Brushes/Black
+Brushes/TransParent
+Brushes/Red
+Mesh Data/Car_Bottom
+Mesh Data/Car_Bumper
+Mesh Data/Car_Grill
+Mesh Data/Car_HeadlightsGlass
+Mesh Data/Car_Interior
+Mesh Data/Car_Taillights
+Mesh Data/Car_Wheels
+Mesh Data/Car_Windows
+Mesh Data/CarBadge
+Mesh Data/CarBody
+Mesh Data/Letter
+Mesh Data/RPMNeedlePlane
+Mesh Data/RPMTable
+Mesh Data/Shadowplane
+Mesh Data/SpeedNeedlePlane
+Mesh Data/SpeedTable
+Prefabs/car/car/RootNode/Camera_Root/Camera
+Prefabs/car/car/RootNode/Camera_Root/Camera_Interest
+Prefabs/car/car/RootNode/Car/Car_Bottom
+Prefabs/car/car/RootNode/Car/Car_Wheels
+Prefabs/car/car/RootNode/Car/Car_Grill
+Prefabs/car/car/RootNode/Car/Car_Bumper
+Prefabs/car/car/RootNode/Car/CarBadge
+Prefabs/car/car/RootNode/Car/Car_Taillights
+Prefabs/car/car/RootNode/Car/Car_Interior
+Prefabs/car/car/RootNode/Car/CarBody
+Prefabs/car/car/RootNode/Car/Car_Windows
+Prefabs/car/car/RootNode/Car/Car_HeadlightsGlass
+Prefabs/car/car/RootNode/Camera_Root
+Prefabs/car/car/RootNode/Shadowplane
+Prefabs/car/car/RootNode/Car
+Prefabs/car/car/RootNode/Point1
+Prefabs/car/car/RootNode/Point
+Prefabs/car/car/<ResourceDictionaryInNode>
+Prefabs/car/car/RootNode
+Prefabs/car/car
+Prefabs/ContactItem/ContactItem/Container/ContactData/ContactName
+Prefabs/ContactItem/ContactItem/Container/ContactData/ContactNumber
+Prefabs/ContactItem/ContactItem/Container/ContactImage
+Prefabs/ContactItem/ContactItem/Container/ContactData
+Prefabs/ContactItem/ContactItem/Container
+Prefabs/ContactItem/ContactItem/<ResourceDictionaryInNode>
+Prefabs/ContactItem/ContactItem/ContactType
+Prefabs/ContactItem/ContactItem
+Prefabs/Gauges/Gauges/RootNode/Camera_Root/Camera
+Prefabs/Gauges/Gauges/RootNode/Camera_Root/Camera_Interest
+Prefabs/Gauges/Gauges/RootNode/Model/RPMGauge/RPMTable/Plane/PrimitiveMeshInternal
+Prefabs/Gauges/Gauges/RootNode/Model/RPMGauge/RPMTable/Plane
+Prefabs/Gauges/Gauges/RootNode/Model/RPMGauge/RPMNeedle/RPMNeedlePlane/Point1
+Prefabs/Gauges/Gauges/RootNode/Model/RPMGauge/RPMNeedle/RPMNeedlePlane
+Prefabs/Gauges/Gauges/RootNode/Model/RPMGauge/RPMTable
+Prefabs/Gauges/Gauges/RootNode/Model/RPMGauge/RPMNeedle
+Prefabs/Gauges/Gauges/RootNode/Model/SpeedGauge/SpeedTable/Stack Layout 3D/SpeedUnit
+Prefabs/Gauges/Gauges/RootNode/Model/SpeedGauge/SpeedTable/Stack Layout 3D/SpeedValue
+Prefabs/Gauges/Gauges/RootNode/Model/SpeedGauge/SpeedTable/Stack Layout 3D
+Prefabs/Gauges/Gauges/RootNode/Model/SpeedGauge/SpeedNeedle/SpeedNeedlePlane/Point
+Prefabs/Gauges/Gauges/RootNode/Model/SpeedGauge/SpeedNeedle/SpeedNeedlePlane
+Prefabs/Gauges/Gauges/RootNode/Model/SpeedGauge/SpeedTable
+Prefabs/Gauges/Gauges/RootNode/Model/SpeedGauge/SpeedNeedle
+Prefabs/Gauges/Gauges/RootNode/Model/RPMGauge
+Prefabs/Gauges/Gauges/RootNode/Model/SpeedGauge
+Prefabs/Gauges/Gauges/RootNode/Camera_Root
+Prefabs/Gauges/Gauges/RootNode/light
+Prefabs/Gauges/Gauges/RootNode/Model
+Prefabs/Gauges/Gauges/<ResourceDictionaryInNode>
+Prefabs/Gauges/Gauges/RootNode
+Prefabs/Gauges/Gauges
+Prefabs/Logo/Logo/RootNode/Camera_Root/Camera
+Prefabs/Logo/Logo/RootNode/Camera_Root/Camera_Interest
+Prefabs/Logo/Logo/RootNode/Rightware_Logo_Clean/Letter
+Prefabs/Logo/Logo/RootNode/Camera_Root
+Prefabs/Logo/Logo/RootNode/light
+Prefabs/Logo/Logo/RootNode/Rightware_Logo_Clean
+Prefabs/Logo/Logo/<ResourceDictionaryInNode>
+Prefabs/Logo/Logo/RootNode
+Prefabs/Logo/Logo
+Prefabs/car
+Prefabs/ContactItem
+Prefabs/Gauges
+Prefabs/Logo
+Animation Data/Node3D.RenderTransformation - TRANSLATION_X
+Animation Data/Node3D.RenderTransformation - TRANSLATION_Y
+Animation Data/Node3D.RenderTransformation - TRANSLATION_Z
+Animation Data/Node3D.RenderTransformation - ROTATION_X
+Animation Data/Node3D.RenderTransformation - ROTATION_Y
+Animation Data/Node3D.RenderTransformation - ROTATION_Z
+Animation Data/Node3D.RenderTransformation - SCALE_X
+Animation Data/Node3D.RenderTransformation - SCALE_Y
+Animation Data/Node3D.RenderTransformation - SCALE_Z
+Animation Data/Node3D.RenderTransformation - TRANSLATION_X_0
+Animation Data/Node3D.RenderTransformation - TRANSLATION_Y_0
+Animation Data/Node3D.RenderTransformation - TRANSLATION_Z_0
+Animation Data/Node3D.RenderTransformation - ROTATION_X_0
+Animation Data/Node3D.RenderTransformation - ROTATION_Y_0
+Animation Data/Node3D.RenderTransformation - ROTATION_Z_0
+Animation Data/Node3D.RenderTransformation - SCALE_X_0
+Animation Data/Node3D.RenderTransformation - SCALE_Y_0
+Animation Data/Node3D.RenderTransformation - SCALE_Z_0
+Resource Files/Images/cubemaps/DefaultCubeMap.dds posX.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds negX.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds posY.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds negY.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds posZ.png
+Resource Files/Images/cubemaps/DefaultCubeMap.dds negZ.png
+Resource Files/Images/DefaultBackground.png
+Resource Files/Images/360Car_MainBody.png
+Resource Files/Images/360Car_Tire.png
+Resource Files/Images/360Car_Wheel.png
+Resource Files/Images/BG.png
+Resource Files/Images/CallIcon.PNG
+Resource Files/Images/CarShadowGroundA.png
+Resource Files/Images/ContactPerson0.png
+Resource Files/Images/ContactPerson1.png
+Resource Files/Images/ContactPerson2.png
+Resource Files/Images/ContactPerson3.png
+Resource Files/Images/ContactPerson4.png
+Resource Files/Images/ContactPerson5.png
+Resource Files/Images/Cube1_Floor.png
+Resource Files/Images/Cube1_Wall.png
+Resource Files/Images/IconBox.png
+Resource Files/Images/IconCar.png
+Resource Files/Images/IconElectric.png
+Resource Files/Images/IconInformation.png
+Resource Files/Images/icons_toprow.png
+Resource Files/Images/Navigation.png
+Resource Files/Images/RpmGauge.png
+Resource Files/Images/RPmGauge_Center.png
+Resource Files/Images/Spede_Needle.png
+Resource Files/Images/SpeedGauge.png
+Resource Files/Images/turnsignal_active.png
+Resource Files/Images/turnsignal_idle.png
+Resource Files/Images/hall2_NegX.png
+Resource Files/Images/hall2_NegY.png
+Resource Files/Images/hall2_NegZ.png
+Resource Files/Images/hall2_PosX.png
+Resource Files/Images/hall2_PosY.png
+Resource Files/Images/hall2_PosZ.png
+Resource Files/Images/8.jpg
+Resource Files/Images/1.png
+Resource Files/Images/2.png
+Resource Files/Images/3.png
+Resource Files/Scripts/Script.js
+Resource Files/Scripts/GetSpeedValue.js
+Resource Files/Fonts/opensans-bold.ttf
+Resource Files/Fonts/opensans-regular.ttf
+Resource Files/Fonts/opensans-light.ttf
+Resource Files/Fonts/opensans-semibold.ttf
+Textures/DefaultBackground
+Textures/Default Texture
+Textures/Default Cube Map Texture
+Textures/360Car_MainBody
+Textures/360Car_Tire
+Textures/360Car_Wheel
+Textures/BG
+Textures/CallIcon
+Textures/CarShadowGroundA
+Textures/ContactPerson0
+Textures/ContactPerson1
+Textures/ContactPerson2
+Textures/ContactPerson3
+Textures/ContactPerson4
+Textures/ContactPerson5
+Textures/Cube1_Floor
+Textures/Cube1_Wall
+Textures/IconBox
+Textures/IconCar
+Textures/IconElectric
+Textures/IconInformation
+Textures/icons_toprow
+Textures/Navigation
+Textures/Reflection
+Textures/RpmGauge
+Textures/RPmGauge_Center
+Textures/Spede_Needle
+Textures/SpeedGauge
+Textures/turnsignal_active
+Textures/turnsignal_idle
+Textures/8
+Textures/1
+Textures/2
+Textures/3
+State Managers/Model State Manager
+State Managers/RootNode State Manager
+State Managers/TurnSignalLeft State Manager
+State Managers/Welcome State Manager
+Page Transitions/RootPage Transitions
+/cluster101-cpp
