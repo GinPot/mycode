@@ -1,8 +1,0 @@
-<QPG:Generation>
-   <QPG:Owner file="owner.qpg"/>
-   <QPG:Values>
-      <QPG:Files>
-         <QPG:Add file="nto-*/patch" pinfo="$"/>
-      </QPG:Files>
-   </QPG:Values>
-</QPG:Generation>

@@ -1,0 +1,229 @@
+1、创建虚拟文件系统分区，可挂载，占用ddr空间；
+2、平台设备probe方案：
+	2.1、若平台设备设置driver_override，则其与平台驱动name匹配；
+	2.2、平台驱动name与设备树的compatible匹配；
+	2.3、acpi，嵌入式不用此匹配；
+	2.4、平台驱动的id_table.name与平台设备name(一般情况是寄存器.节点名或者就是节点名1000000.clock/sound_ac108)匹配；
+	2.5、平台驱动name与平台设备name匹配
+3、匹配成功后会设置驱动依赖的gpio；
+4、probe调用者，先调用device_driver->probe，通过驱动所在的bus得到platform_driver.probe，最后调用到驱动的probe；
+
+mount： 打印当前已挂载虚拟、实体分区的详细数据；
+tmpfs： 空虚拟文件分区；
+devtmpfs： 在kernel即创建保存设备节点的虚拟文件分区(也可用tempfs，在用户空间创建节点)
+
+
+start_kernel()
+	vfs_caches_init()
+		mnt_init()
+			sysfs_init()
+				register_filesystem(&sysfs_fs_type)										//创建虚拟系统文件分区,占用ddr空间，可以挂载(mount -t sysfs none /mnt) 888
+
+
+
+
+
+start_kernel()
+	arch_call_rest_init()
+		rest_init()
+			pid = kernel_thread(kernel_init, NULL, CLONE_FS)							//创建第一个线程，即为1号进程；初始化驱动后进入用户态
+				kernel_init_freeable()
+					...
+					driver_init()
+						devices_init();
+							devices_kset = kset_create_and_add("devices", &device_uevent_ops, NULL);
+								kset = kset_create(name, uevent_ops, parent_kobj);		//申请struct kset内存，设置kobj的name，及kset的其他成员赋值
+									kset_register(kset)
+										kset_init(k);									//初始化kset结构体
+										kobject_add_internal(&k->kobj)					//将kobject添加到kernel中，并调用sysfs接口创建对应的目录
+								kset_register(kset)
+						buses_init()
+						classes_init()
+						firmware_init()
+						hypervisor_init()
+						of_core_init()
+							of_populate_phandle_cache()											//节点phandle的信息保存到全局phandle_cache数组中
+							of_kset = kset_create_and_add("devicetree", NULL, firmware_kobj)	//创建/sys/firmware/devicetree目录的kset
+							for_each_of_allnodes(np)
+								__of_attach_node_sysfs(np);										//为每个节点kobject_add,使得/sys/firmware/devicetree/base下有对应每个节点信息
+							proc_symlink("device-tree", NULL, "/sys/firmware/devicetree/base");	//创建/sys/firmware/devicetree/base/的软连接/proc/device-tree/
+
+						platform_bus_init()
+							device_register(&platform_bus)								//注册platform bus设备
+								device_initialize(dev)
+									dev->kobj.kset = devices_kset						//这个device结构体的kobj的kset为devices_kset，即根为devices_kset
+									kobject_init(&dev->kobj, &device_ktype);			//初始化device结构体的kobj结构体
+									...
+								device_add(dev)
+									...
+									dev_set_name();										//一般soc以外的一些节点在这设置name,如cpu
+									...
+									parent = get_device(dev->parent);
+									kobj = get_device_parent(dev, parent)
+										if (parent == NULL)
+											parent_kobj = virtual_device_parent(dev)	//若没有父设备，则创建一个/sys/devices/virtual/的kobj为父
+									if (kobj)
+									dev->kobj.parent = kobj;							//设置parent kobj
+									
+									kobject_add(&dev->kobj, dev->kobj.parent, NULL);	//将设备dev初始化的kobj添加到kobject模型中，创建sys相关目录
+									device_platform_notify(dev, KOBJ_ADD)				//测试里面不会做任何事
+									device_create_file(dev, &dev_attr_uevent)			//在当前device下创建uevent文件
+
+									device_add_class_symlinks(dev)						// 888
+										sysfs_create_link(&dev->kobj, of_node_kobj(of_node), "of_node")				//在当前device目录(dev->kobj)下创建设备树节点软连接of_node 888
+										sysfs_create_link(&dev->kobj, &dev->class->p->subsys.kobj, "subsystem")		//在当前device目录下创建subsystem软连接,一般不是platform的节点而是/sys/class/下对应文件 888
+										sysfs_create_link(&dev->kobj, &dev->parent->kobj, "device")					//一般在bus下面的设备节点下创建device软连接指向父节点的kobject 888
+										sysfs_create_link(&dev->class->p->subsys.kobj, &dev->kobj, dev_name(dev))	//在/sys/class/的dev->class->p->subsys.kobj里面创建具体的device软连接，连接到device的dev->kobj上 888
+									...
+
+									device_add_attrs(struct device *dev)											//为kobj创建属性组
+										if (type)
+											device_add_groups(dev, type->groups)									//当有type时，需要创建对应的属性组
+										device_create_file(dev, &dev_attr_online);									//如果有需要当前device目录下创建online
+
+									bus_add_device(dev)																//将设备加入到管理它的bus总线的设备链表上 888
+										sysfs_create_link(&bus->p->devices_kset->kobj, &dev->kobj, dev_name(dev))	//在改设备的/sys/bus/xxx/devices/下创建改dev name的软连接文件,软连接到/sys/devices/platform/xxx下 888
+										sysfs_create_link(&dev->kobj, &dev->bus->p->subsys.kobj, "subsystem")		//在当前device(设备树一级子节点和soc下的二级子节点)目录(dev->kobj(/sys/devices/platform/xxx))下,创建subsystem软连接文件,连接到该设备的bus obj下 888
+									dpm_sysfs_add(dev)																//电源管理相关,解析设备树创建devices时一般不会设置
+									device_pm_add(dev)																//同上
+									..
+									if(MAJOR(dev->devt))															//是否创建/dev/节点关键在于是否有主次设备号
+										device_create_file(dev, &dev_attr_dev)										//在device目录下创建dev文件，保存主次设备号，即会生成/dev/下面的节点才有这个 888
+										device_create_sys_dev_entry(dev)											//在/sys/dev/char/下创建改driver的主次设备号文件名的软连接，指向该设备 888
+										devtmpfs_create_node(dev)													//通知kdevtmpfs内核线程-一般根据dev->kobj->name-创建/dev/下对应改驱动的节点，节点属性有默认值也可根据具体修改，对比没有devtmpfs的是在应用层创建/dev/节点 888
+											
+									if (dev->bus)
+										blocking_notifier_call_chain(&dev->bus->p->bus_notifier, BUS_NOTIFY_ADD_DEVICE, dev)		//通知dev->bus->p->bus_notifier链表上的订阅的模块 888
+									kobject_uevent(&dev->kobj, KOBJ_ADD)											//用device所述的kset添加uevent事件的环境变量env,及设置其他信息到env; 然后一般用netlink发送给应用层(走网络发送)，而不是kmod(直接运行用户的程序); tmpfs的方案是用户控件在创建节点时用让驱动重新发一次uevent来得到创建节点的信息，所以此方式增加了开机时间 888
+										kobject_uevent_env(kobj, action, NULL)
+											...																		//组织上报信息
+											kobject_uevent_net_broadcast(kobj, env, action_string, devpath)			//上报
+											//call_usermodehelper_exec(info, UMH_NO_WAIT)							//或者配置环境变量，执行用户控件命令,一般不用这种方法
+									bus_probe_device(dev)															//probe设备对应的驱动 888
+										if (bus->p->drivers_autoprobe)
+											device_initial_probe(dev);
+												__device_attach(dev, true);
+													if (dev->driver)												//判断当前device是设备，还是驱动
+														....
+													else															//是设备
+														bus_for_each_drv(dev->bus, NULL, &data, __device_attach_driver)
+															while ((drv = next_driver(&i)) && !error)
+																error = fn(drv, data) => __device_attach_driver(drv, data)
+																	ret = driver_match_device(drv, dev)
+																		drv->bus->match(dev, drv) => platform_bus_type.match => platform_match(dev, drv)
+																			if (pdev->driver_override)											//1、platform_device设置了driver_override时，匹配driver->name，一般不用
+																				return !strcmp(pdev->driver_override, drv->name)
+																			if (of_driver_match_device(dev, drv))
+																				of_match_device(drv->of_match_table, dev)						//2、匹配驱动的of_match_table对应的compatible(type、name)属性，和设备对应的dts节点compatible比较,一般用这个方案匹配 888
+																			if (acpi_driver_match_device(dev, drv))								//3、嵌入式一般不用
+																			if (pdrv->id_table)
+																				return platform_match_id(pdrv->id_table, pdev) != NULL;			//4、驱动的id_table.name和platform_device的name匹配，这种方式也会用到 888
+																			return (strcmp(pdev->name, drv->name) == 0)							//5、最后一种直接用platform_device和device_driver的name匹配
+																	匹配结果返回1的话继续往下运行 888
+																	async_allowed = driver_allows_async_probing(drv)							//判断改驱动是否支持异步probe 888
+																		switch (drv->probe_type)												//1、驱动初始化时可能会设置；
+																		if (cmdline_requested_async_probing(drv->name))							//2、启动参数设置"driver_async_probe=xx"
+																		if (module_requested_async_probing(drv->owner))							//3、驱动模块可能会设置
+																	if (async_allowed)
+																		data->have_async = true;												//异步probe 888
+																	if (data->check_async && async_allowed != data->want_async)					//如果设置为异步probe则直接退出
+																		return 0;
+																	driver_probe_device(drv, dev)
+																		...																		//检测是否已经注册
+																		...																		//使能电源
+																		really_probe(dev, drv)
+																			device_links_check_suppliers(dev)									//检测设备供应商是否支持，一般情况不会设置device->links.suppliers
+																			dev->driver = drv
+																			pinctrl_bind_pins(dev)												//如果驱动dts设置gpio，则根据dts设置为对应的复用功能、上下拉、驱动力等
+																			if (dev->bus->dma_configure)
+																				dev->bus->dma_configure(dev)									//dma相关配置
+																			driver_sysfs_add(dev)
+																				if (dev->bus)
+																					blocking_notifier_call_chain(&dev->bus->p->bus_notifier, BUS_NOTIFY_BIND_DRIVER, dev)	//发送BUS_NOTIFY_BIND_DRIVER事件
+																				sysfs_create_link(&dev->driver->p->kobj, &dev->kobj, kobject_name(&dev->kobj))				//在该设备的/sys/bus/xxx/drivers/xxx/下创建改dev name的软连接文件,软连接到/sys/devices/platform/xxx/下(xxx目录见8.platform_driver.tx，在驱动注册的时候创建) 888
+																				sysfs_create_link(&dev->kobj, &dev->driver->p->kobj, "driver")								//在当前device(设备树一级子节点和soc下的二级子节点)目录(dev->kobj(/sys/devices/platform/xxx))下,创建driver软连接文件,连接到该设备的dev->driver->p->kobj下 888			
+																			if (dev->pm_domain && dev->pm_domain->activate)
+																				dev->pm_domain->activate(dev)									//电源相关操作
+																			if (dev->bus->probe)
+																				dev->bus->probe(dev)											//一般没有bus的probe
+																			if (drv->probe)
+																				drv->probe(dev)													//device_driver->probe,这个不是platform_driver的probe
+																					platform_drv_probe(dev)										//在驱动注册时的时候(__platform_driver_register),配置的edevice_driver的probe函数，同时会设置bus类型 888
+																						struct platform_driver *drv = to_platform_driver(_dev->driver)		//通过device_driver得到platform_driver
+																						if (drv->probe)
+																							drv->probe(dev)										//这才是驱动platform_driver的probe
+																					
+																			
+																			driver_bound(dev)
+																				klist_add_tail(&dev->p->knode_driver, &dev->driver->p->klist_devices)						//把device的knode节点接入到driver的klist链表中
+																				device_links_driver_bound(dev)																//设置device->links.status = DL_DEV_DRIVER_BOUND
+																				driver_deferred_probe_del(dev)																//把改设备在延迟probe队列中删除
+																				if (dev->bus)
+																					blocking_notifier_call_chain(&dev->bus->p->bus_notifier, BUS_NOTIFY_BOUND_DRIVER, dev)	//发送BUS_NOTIFY_BOUND_DRIVER事件
+																				kobject_uevent(&dev->kobj, KOBJ_BIND)														//发送uevent事件
+																			
+																			
+																		...																		//失能电源
+														..
+														async_schedule_dev(__device_attach_async_helper, dev)									//若设置支持异步probe，则在这 888								
+															async_schedule_node(func, dev, dev_to_node(dev))
+																async_schedule_node_domain(func, data, node, &async_dfl_domain)
+																	...
+																	if (!entry || atomic_read(&entry_count) > MAX_WORK)							//若内存不够或者太多等待工作则直接处理
+																		__device_attach_async_helper(data, newcookie)
+																	...
+																	INIT_WORK(&entry->work, async_run_entry_fn)
+																	...
+																	queue_work_node(node, system_unbound_wq, &entry->work)						//选择合适的cpu运行队列
+																		__device_attach_async_helper(data, newcookie)							//继续probe
+
+
+
+														
+									...
+							bus_register(&platform_bus_type)														//创建/dev/bus/下的platform目录对应的object
+								kset_register(&priv->subsys)														//注册platform的object 888
+								bus_create_file(bus, &bus_attr_uevent)												//创建uevent文件
+								priv->devices_kset = kset_create_and_add("devices", NULL, &priv->subsys.kobj)		//在/dev/bus/platform/下创建devices目录的object 888
+								kset_create_and_add("drivers", NULL, &priv->subsys.kobj)							//在/dev/bus/platform/下创建drivers目录的object 888
+								add_probe_files(bus)																//在/dev/bus/platform/下创建drivers_probe、drivers_autoprobe文件
+								bus_add_groups(bus, bus->bus_groups)
+
+
+
+struct bus_type platform_bus_type = {
+	.name		= "platform",
+	.dev_groups	= platform_dev_groups,
+	.match		= platform_match,					//驱动设备匹配调用(probe用的是platform_driver的probe)
+	.uevent		= platform_uevent,
+	.dma_configure	= platform_dma_configure,
+	.pm		= &platform_dev_pm_ops,
+};
+
+sys下：
+	kset： 
+		(1)devices
+			(6)system
+			(11)platform(kobject)
+		(5)bus
+			(12)platform(kobject)
+				(13)devices
+				(14)drivers
+		(7)class
+	kobj： 
+		(2)dev
+			(3)block， (4)char
+		(8)firmware
+			(10)devicetree(kset)
+		(9)hypervisor
+
+
+
+在配置CONFIG_SYSFS时：
+	late_initcall(of_fdt_raw_init);
+		sysfs_create_bin_file(firmware_kobj, &of_fdt_raw_attr)													//创建/sys/firmware/fdt文件,从保存uboot传过来的设备树的虚拟地址initial_boot_params读取信息给上层
+
+
+
+
+

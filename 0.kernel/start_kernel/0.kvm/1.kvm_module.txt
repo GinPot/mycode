@@ -1,0 +1,146 @@
+el1_sync
+3:	cmp	x0, #HVC_RESET_VECTORS
+	beq	9f				// Nothing to reset!
+9:	mov	x0, xzr
+	eret
+
+module_init(arm_init);																															//virt\kvm\arm\arm.c
+	arm_init(void)														
+		kvm_init(NULL, sizeof(struct kvm_vcpu), 0, THIS_MODULE);														
+			kvm_arch_init(opaque);														
+				if (!is_hyp_mode_available())																									//根据arch\arm64\kernel\head.s设置__boot_cpu_mode判断
+				if (!in_hyp_mode && kvm_arch_requires_vhe())																					//内核没有在EL2的话，就不需要SVE(scalable vector extension),SVE的实现依赖于VHE,没有VHE而有SVE的情况就有问题的
+				for_each_online_cpu(cpu)														
+					smp_call_function_single(cpu, check_kvm_target_cpu, &ret, 1);														
+						check_kvm_target_cpu()														
+							kvm_target_cpu()																									//arch\arm64\kvm\guest.c,根据读取每个核的cpuid值，来确定该CPU是否支持虚拟化(貌似返回值没有小于0的)
+				init_common_resources();														
+					kvm_set_ipa_limit();																										//根据读取寄存器得到arm核支持的物理内存范围是40bit(1TB)
+						((PAGE_SHIFT(12) - 3) * (4 - (n(0))) + 3) + PAGE_SHIFT(12) - 3 = 48
+						kvm_ipa_limit = 40;
+				kvm_arm_init_sve();																												//如果系统支持SVE的话，则进行SVE初始化，H5不支持
+				if (!in_hyp_mode) ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+					init_hyp_mode()																												//映射各种hyp代码、数据、异常等相关内存空间
+						kvm_mmu_init()																											//hyp idmap代码段映射，被host调用
+							hyp_idmap_start = kvm_virt_to_phys(__hyp_idmap_text_start);															//获取hyp_idmap_text代码段物理地址
+							hyp_idmap_start = ALIGN_DOWN(hyp_idmap_start, PAGE_SIZE);															//4k对齐
+							hyp_idmap_end = kvm_virt_to_phys(__hyp_idmap_text_end);
+							hyp_idmap_end = ALIGN(hyp_idmap_end, PAGE_SIZE);
+							hyp_idmap_vector = kvm_virt_to_phys(__kvm_hyp_init);																//arch\arm64\kvm\hyp-init.S, 获取EL2异常向量表的物理地址
+							...
+							kvm_debug("HYP VA range: %lx:%lx\n", kern_hyp_va(PAGE_OFFSET), kern_hyp_va((unsigned long)high_memory - 1));		//结合现有内存，得到虚拟地址范围, 线性映射开始的虚拟地址，把内存线性映射到该虚拟地址上？
+							...																													//判断hyp_idmap_text的物理地址有效
+							hyp_pgd = (pgd_t *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, hyp_pgd_order);										//以页为单位申请内存返回虚拟地址IPA
+							...
+							kvm_map_idmap_text(hyp_pgd)
+								__create_hyp_mappings(	pgd, 																					//存放页表的地址(IPA),对用host系统是虚拟地址
+														__kvm_idmap_ptrs_per_pgd(),																//1 << （48 - 39）=1<<9=512
+														hyp_idmap_start, 																		//hyp_idmap代码段起始物理地址
+														hyp_idmap_end,																			//hyp_idmap代码段结束物理地址
+														__phys_to_pfn(hyp_idmap_start),															//hyp_idmap代码段起始物理地址 >> 12
+														PAGE_HYP_EXEC);																			//权限
+									...
+									addr = start & PAGE_MASK;																					//代码起始物理地址低12位清0
+									end = PAGE_ALIGN(end);																						//结束地址4K对齐
+									...
+									pgd = pgdp + kvm_pgd_index(addr, ptrs_per_pgd);																//页表地址+addr[47:39]，得到pgd的index
+									if (pgd_none(*pgd)) {																						//确定上面得到的地址为空
+										pud = pud_alloc_one(NULL, addr);																		//申请pud虚拟地址IPA
+										kvm_pgd_populate(pgd, pud);																				//pgd的index上保存pud的物理地址
+											WRITE_ONCE(*pgdp, kvm_mk_pgd(pudp))
+										get_page(virt_to_page(pgd));
+									}
+									next = pgd_addr_end(addr, end);
+									create_hyp_pud_mappings(pgd, addr, next, pfn, prot)
+										...
+										create_hyp_pmd_mappings(pud, addr, next, pfn, prot)
+											...
+											create_hyp_pte_mappings(pmd, addr, next, pfn, prot)
+												...
+						...
+						for_each_possible_cpu(cpu)
+							...
+							per_cpu(kvm_arm_hyp_stack_page, cpu) = stack_page																	//为每个cpu分配hyp模式下的一页大小的栈空间，保存在pre-cpu的变量中
+						create_hyp_mappings(kvm_ksym_ref(__hyp_text_start), kvm_ksym_ref(__hyp_text_end), PAGE_HYP_EXEC)						//hyp代码段映射，被host调用，hyp_idmap段
+						create_hyp_mappings(kvm_ksym_ref(__start_rodata), kvm_ksym_ref(__end_rodata), PAGE_HYP_RO)								//只读数据段映射，被host调用，hyp_idmap段
+						create_hyp_mappings(kvm_ksym_ref(__bss_start), kvm_ksym_ref(__bss_stop), PAGE_HYP_RO)									//bss段映射，被host调用，hyp_idmap段
+						kvm_map_vectors()																										//hyp异常向量表段的映射
+						for_each_possible_cpu(cpu)
+							create_hyp_mappings(stack_page, stack_page + PAGE_SIZE, PAGE_HYP)													//每个cpu的栈空间映射，hyp_idmap段
+						for_each_possible_cpu(cpu)
+							create_hyp_mappings(cpu_data, cpu_data + 1, PAGE_HYP)																//host cpu上下文的映射，hyp_idmap段
+						hyp_map_aux_data()																										//callback数据空间的映射，hyp_idmap段
+				init_subsystems() ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓																				//vpu、vgic、vtimer等初始化
+					on_each_cpu(_kvm_arch_hardware_enable, NULL, 1)		↓↓↓CPU↓↓↓																//每个cpu都需要设置一次
+						cpu_hyp_reinit()
+							cpu_hyp_reset()																										//啥都没做
+								__hyp_reset_vectors()
+									mov	x0, #HVC_RESET_VECTORS																					//arch\arm64\kernel\hyp-stub.S,保存参数
+									hvc	#0																										//进入el2
+									ret																											//返回__hyp_reset_vectors()函数
+							cpu_init_hyp_mode(NULL)
+								__hyp_set_vectors(kvm_get_idmap_vector())																		//重置EL2的异常向量表,新的异常向量地址arch\arm64\kvm\hyp-init.S ==> __kvm_hyp_init
+									mov	x1, x0
+									mov	x0, #HVC_SET_VECTORS
+									hvc	#0
+										el1_sync
+											cmp	x0, #HVC_SET_VECTORS
+											msr	vbar_el2, x1																					//把__kvm_hyp_init映射好的地址保存到vbar_el2寄存器中
+									...
+									ret
+								
+								pgd_ptr = kvm_mmu_get_httbr()																					//把上面映射的pgd保存的物理地址取出
+									return virt_to_phys(hyp_pgd)
+								stack_page = __this_cpu_read(kvm_arm_hyp_stack_page)															//取出cpu栈地址
+								hyp_stack_ptr = stack_page + PAGE_SIZE;
+								vector_ptr = (unsigned long)kvm_get_hyp_vector();																//arch\arm64\kvm\hyp\hyp-entry.S,最终的hyp异常向量表__kvm_hyp_vector的hyp虚拟地址
+								__cpu_init_hyp_mode(pgd_ptr, hyp_stack_ptr, vector_ptr)
+									...																											//触发hyp模式执行，设置页表基地址，异常向量表，stack等
+								__cpu_init_stage2()																								//空
+							kvm_arm_init_debug()
+								__this_cpu_write(mdcr_el2, kvm_call_hyp_ret(__kvm_get_mdcr_el2));
+					hyp_cpu_pm_init()																											//注册cpu低功耗notifier
+					kvm_vgic_hyp_init()									↓↓↓vgic↓↓↓
+						gic_kvm_info = gic_get_kvm_info()																						//从arm,gic-400驱动中获取中断相关的信息
+						vgic_v2_probe(gic_kvm_info)
+							...
+							create_hyp_io_mappings(																								//映射gic寄存器对应的host VA、hyp VA地址
+													info->vctrl.start,																			//gic控制寄存器PA物理地址
+													resource_size(&info->vctrl),																//寄存器地址大小
+													&kvm_vgic_global_state.vctrl_base,															//保存IPA地址指针
+													&kvm_vgic_global_state.vctrl_hyp)															//保存VA地址指针
+								*kaddr = ioremap(phys_addr, size);																				//PA物理地址ioremap为IPA地址
+								...
+								__create_hyp_private_mapping(phys_addr, size, &addr, PAGE_HYP_DEVICE)											//映射gic寄存器对应的VA地址保存到addr地址上
+									...
+									size = PAGE_ALIGN(size + offset_in_page(phys_addr));														//phys_addr 4k对齐，实际size = size
+									base = io_map_base - size																					//hyp idmap text段上空出size空间
+									__create_hyp_mappings(pgd, 																					//存放pgd页表的虚拟地址IPA
+															__kvm_idmap_ptrs_per_pgd(),															//512个index
+															base, 																				//hyp idmap text段物理地址
+															base + size,																		//hyp idmap text要映射的大小
+															__phys_to_pfn(phys_addr), 															//phys_addr >> 12
+															prot)																				//页表的权限属性
+										...
+										addr = start & PAGE_MASK;																				//pgd物理地址低12bit清零
+										end = PAGE_ALIGN(end);
+							...
+							kvm_register_vgic_device(KVM_DEV_TYPE_ARM_VGIC_V2)																	//注册vgic相关的ops函数
+						...
+						request_percpu_irq(kvm_vgic_global_state.maint_irq, vgic_maintenance_handler, "vgic", kvm_get_running_vcpus())			//host注册vgic中断，但好像没啥用
+						...
+					kvm_timer_hyp_init(vgic_present)					↓↓↓timer↓↓↓
+						info = arch_timer_get_kvm_info()																						//获取定时器相关的硬件信息
+						...
+						request_percpu_irq(host_vtimer_irq, kvm_arch_timer_handler, "kvm guest vtimer", kvm_get_running_vcpus())				//注册虚拟定时器中断kvm guest vtimer
+					...
+
+
+
+
+
+
+
+
+
+

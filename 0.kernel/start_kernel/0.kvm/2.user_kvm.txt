@@ -1,0 +1,40 @@
+1、kvm_fd = open("/dev/kvm", O_RDWR)
+	驱动无操作；
+
+
+
+2、vm_fd = ioctl(kvm_fd, KVM_CREATE_VM, 0)
+	kvm_dev_ioctl();
+		kvm_dev_ioctl_create_vm(arg)				//arg即ioctl的第三个参数
+		...
+		kvm_create_vm(type)							
+			...										//申请结构体kvm的内存，对结构体成员进行基本初始化
+			kvm_arch_init_vm(kvm, type)
+				kvm_arm_setup_stage2(kvm, type)		//设置VTCR_EL2寄存器，配置EL0和EL1访问内存时stage 2的转换相关的属性设置，还有配置可缓存性、可共享性信息
+					...
+					phys_shift = KVM_VM_TYPE_ARM_IPA_SIZE(type);					//取type低8bit，这里为0；
+					if (phys_shift) {
+					...
+					} else {
+						phys_shift = KVM_PHYS_SHIFT;								//guest的虚拟地址有效位40bit(host虚拟有效位48bit)
+					}
+					...
+					parange = read_sanitised_ftr_reg(SYS_ID_AA64MMFR0_EL1) & 7;		//获取cpu物理内存支持的范围，0010:40bit，1TB
+					...
+					vtcr |= parange << VTCR_EL2_PS_SHIFT							//0010左移16bit，保存到vtcr(VTCR_EL2)[18:16]寄存器中
+					...
+					vtcr |= VTCR_EL2_T0SZ(phys_shift);								//64-40=24保存到VTCR_EL2[5:0]，stage 2转换粒度？
+					...
+					
+					...
+					vtcr |= VTCR_EL2_HA;											//使能硬件访问标记管理，可能H5上没有实现
+					...
+					kvm->arch.vtcr = vtcr;											//保存配置
+				...																	//设置percpu的参数
+				kvm_alloc_stage2_pgd(kvm)
+
+
+
+
+
+

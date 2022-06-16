@@ -1,0 +1,326 @@
+U-Boot SPL 2019.07 (Oct 14 2019 - 20:27:10 +0800)
+DRAM: 2048 MiB
+Trying to boot from MMC1
+NOTICE:  BL31: v2.1(debug):269a347
+NOTICE:  BL31: Built : 23:02:45, Oct 10 2019
+NOTICE:  BL31: Detected Allwinner H5 SoC (1718)
+NOTICE:  BL31: Found U-Boot DTB at 0x4084578, model: GinPot H5
+INFO:    ARM GICv2 driver initialized
+INFO:    Configuring SPC Controller
+NOTICE:  BL31: PMIC: Defaulting to PortL GPIO according to H5 reference design.
+INFO:    BL31: Platform setup done
+INFO:    BL31: Initializing runtime services
+INFO:    BL31: cortex_a53: CPU workaround for 855873 was applied
+INFO:    BL31: Preparing for EL3 exit to normal world
+INFO:    Entry point address = 0x4a000000
+INFO:    SPSR = 0x3c9
+
+
+U-Boot 2019.07 (Oct 14 2019 - 20:27:10 +0800) Allwinner Technology
+
+CPU:   Allwinner H5 (SUN50I)
+Model: GinPot H5
+DRAM:  2 GiB
+MMC:   mmc@1c0f000: 0
+Loading Environment from FAT... OK
+In:    serial
+Out:   serial
+Err:   serial
+Net:   phy interface7
+eth0: ethernet@1c30000
+starting USB...
+No working controllers found
+Hit any key to stop autoboot:  0 
+19858 bytes read in 3 ms (6.3 MiB/s)
+24103424 bytes read in 1064 ms (21.6 MiB/s)
+## Flattened Device Tree blob at 48000000
+   Booting using the fdt blob at 0x48000000
+   Loading Device Tree to 0000000049ff8000, end 0000000049fffd91 ... OK
+
+Starting kernel ...
+
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[    0.000000] Linux version 5.2.0 (wuping@ubuntu) (gcc version 7.4.1 20181213 [linaro-7.4-2019.02 revision 56ec6f6b99cc167ff0c2f8e1a2eed33b1edc85d4] (Linaro GCC 7.4-2019.02)) #243 SMP PREEMPT Thu Apr 2 23:31:49 CST 2020
+[    0.000000] Machine model: GinPot H5
+[    0.000000] efi: Getting EFI parameters from FDT:
+[    0.000000] efi: UEFI not found.
+[    0.000000] cma: Reserved 32 MiB at 0x00000000be000000
+[    0.000000] NUMA: No NUMA configuration found
+[    0.000000] NUMA: Faking a node at [mem 0x0000000040000000-0x00000000bfffffff]
+[    0.000000] NUMA: NODE_DATA [mem 0xbdbe5840-0xbdbe6fff]
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000040000000-0x00000000bfffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000040000000-0x00000000bfffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000040000000-0x00000000bfffffff]
+[    0.000000] On node 0 totalpages: 524288
+[    0.000000]   DMA32 zone: 8192 pages used for memmap
+[    0.000000]   DMA32 zone: 0 pages reserved
+[    0.000000]   DMA32 zone: 524288 pages, LIFO batch:63
+[    0.000000] psci: probing for conduit method from DT.
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.000000] psci: Using standard PSCI v0.2 function IDs
+[    0.000000] psci: MIGRATE_INFO_TYPE not supported.
+[    0.000000] psci: SMC Calling Convention v1.1
+[    0.000000] percpu: Embedded 23 pages/cpu s57048 r8192 d28968 u94208
+[    0.000000] pcpu-alloc: s57048 r8192 d28968 u94208 alloc=23*4096
+[    0.000000] pcpu-alloc: [0] 0 [0] 1 [0] 2 [0] 3 
+[    0.000000] Detected VIPT I-cache on CPU0
+[    0.000000] CPU features: detected: ARM erratum 845719
+[    0.000000] Speculative Store Bypass Disable mitigation not required
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 516096
+[    0.000000] Policy zone: DMA32
+[    0.000000] Kernel command line: console=ttyS0,115200 earlyprintk root=/dev/mmcblk0p2 rootfstype=ext4 rw rootwait panic=10 snd_soc_ac108.dyndbg=+p ac108_card.dyndbg=+p
+[    0.000000] Memory: 2002880K/2097152K available (12860K kernel code, 2098K rwdata, 7048K rodata, 1472K init, 458K bss, 61504K reserved, 32768K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1
+[    0.000000] rcu: Preemptible hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=256 to nr_cpu_ids=4.
+[    0.000000] 	Tasks RCU enabled.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=4
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] GIC: Using split EOI/Deactivate mode
+[    0.000000] random: get_random_bytes called from start_kernel+0x2c0/0x474 with crng_init=0
+[    0.000000] arch_timer: cp15 timer(s) running at 24.00MHz (phys).
+[    0.000000] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[    0.000005] sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[    0.000178] Console: colour dummy device 80x25
+[    0.000273] Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=96000)
+[    0.000286] pid_max: default: 32768 minimum: 301
+[    0.000376] LSM: Security Framework initializing
+[    0.001567] Dentry cache hash table entries: 262144 (order: 9, 2097152 bytes)
+[    0.002161] Inode-cache hash table entries: 131072 (order: 8, 1048576 bytes)
+[    0.002210] Mount-cache hash table entries: 4096 (order: 3, 32768 bytes)
+[    0.002238] Mountpoint-cache hash table entries: 4096 (order: 3, 32768 bytes)
+[    0.024042] ASID allocator initialised with 32768 entries
+[    0.032033] rcu: Hierarchical SRCU implementation.
+[    0.044283] EFI services will not be available.
+[    0.052311] smp: Bringing up secondary CPUs ...
+[    0.085313] Detected VIPT I-cache on CPU1
+[    0.085373] CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[    0.116867] Detected VIPT I-cache on CPU2
+[    0.116903] CPU2: Booted secondary processor 0x0000000002 [0x410fd034]
+[    0.148880] Detected VIPT I-cache on CPU3
+[    0.148913] CPU3: Booted secondary processor 0x0000000003 [0x410fd034]
+[    0.148994] smp: Brought up 1 node, 4 CPUs
+[    0.149016] SMP: Total of 4 processors activated.
+[    0.149024] CPU features: detected: 32-bit EL0 Support
+[    0.149032] CPU features: detected: CRC32 instructions
+[    0.149575] CPU: All CPU(s) started at EL2
+[    0.149599] alternatives: patching kernel code
+[    0.151555] devtmpfs: initialized
+[    0.156584] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[    0.156617] futex hash table entries: 1024 (order: 4, 65536 bytes)
+[    0.158188] pinctrl core: initialized pinctrl subsystem
+[    0.159473] DMI not present or invalid.
+[    0.159904] NET: Registered protocol family 16
+[    0.160498] audit: initializing netlink subsys (disabled)
+[    0.160742] audit: type=2000 audit(0.160:1): state=initialized audit_enabled=0 res=1
+[    0.161936] cpuidle: using governor menu
+[    0.162435] hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[    0.166456] DMA: preallocated 256 KiB pool for atomic allocations
+[    0.167714] Serial: AMBA PL011 UART driver
+[    0.189964] HugeTLB registered 1.00 GiB page size, pre-allocated 0 pages
+[    0.189980] HugeTLB registered 32.0 MiB page size, pre-allocated 0 pages
+[    0.189988] HugeTLB registered 2.00 MiB page size, pre-allocated 0 pages
+[    0.189997] HugeTLB registered 64.0 KiB page size, pre-allocated 0 pages
+[    0.192252] cryptd: max_cpu_qlen set to 1000
+[    0.196314] ACPI: Interpreter disabled.
+[    0.198290] vgaarb: loaded
+[    0.198580] SCSI subsystem initialized
+[    0.198756] libata version 3.00 loaded.
+[    0.199017] usbcore: registered new interface driver usbfs
+[    0.199064] usbcore: registered new interface driver hub
+[    0.199134] usbcore: registered new device driver usb
+[    0.199859] media: Linux media interface: v0.10
+[    0.199893] videodev: Linux video capture interface: v2.00
+[    0.199946] pps_core: LinuxPPS API ver. 1 registered
+[    0.199953] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.199976] PTP clock support registered
+[    0.200104] EDAC MC: Ver: 3.0.0
+[    0.201283] FPGA manager framework
+[    0.201380] Advanced Linux Sound Architecture Driver Initialized.
+[    0.202330] clocksource: Switched to clocksource arch_sys_counter
+[    0.202531] VFS: Disk quotas dquot_6.6.0
+[    0.202598] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[    0.202827] pnp: PnP ACPI: disabled
+[    0.209746] NET: Registered protocol family 2
+[    0.210192] tcp_listen_portaddr_hash hash table entries: 1024 (order: 2, 16384 bytes)
+[    0.210282] TCP established hash table entries: 16384 (order: 5, 131072 bytes)
+[    0.210531] TCP bind hash table entries: 16384 (order: 6, 262144 bytes)
+[    0.210844] TCP: Hash tables configured (established 16384 bind 16384)
+[    0.210984] UDP hash table entries: 1024 (order: 3, 32768 bytes)
+[    0.211054] UDP-Lite hash table entries: 1024 (order: 3, 32768 bytes)
+[    0.211241] NET: Registered protocol family 1
+[    0.211723] RPC: Registered named UNIX socket transport module.
+[    0.211731] RPC: Registered udp transport module.
+[    0.211737] RPC: Registered tcp transport module.
+[    0.211743] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    0.211756] PCI: CLS 0 bytes, default 64
+[    0.212737] kvm [1]: IPA Size Limit: 40bits
+[    0.213706] kvm [1]: vgic interrupt IRQ1
+[    0.213839] kvm [1]: Hyp mode initialized successfully
+[    0.221022] Initialise system trusted keyrings
+[    0.221171] workingset: timestamp_bits=44 max_order=19 bucket_order=0
+[    0.229063] squashfs: version 4.0 (2009/01/31) Phillip Lougher
+[    0.229885] NFS: Registering the id_resolver key type
+[    0.229912] Key type id_resolver registered
+[    0.229918] Key type id_legacy registered
+[    0.229932] nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[    0.230118] 9p: Installing v9fs 9p2000 file system support
+[    0.231833] Key type asymmetric registered
+[    0.231842] Asymmetric key parser 'x509' registered
+[    0.231887] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+[    0.231896] io scheduler mq-deadline registered
+[    0.231903] io scheduler kyber registered
+[    0.234289] sun4i-usb-phy 1c19400.phy: Couldn't request ID GPIO
+[    0.239938] sun8i-h3-r-pinctrl 1f02c00.pinctrl: initialized sunXi PIO driver
+[    0.243977] sun50i-h5-pinctrl 1c20800.pinctrl: initialized sunXi PIO driver
+[    0.248189] EINJ: ACPI disabled.
+[    0.263246] Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+[    0.265068] sun50i-h5-pinctrl 1c20800.pinctrl: 1c20800.pinctrl supply vcc-pa not found, using dummy regulator
+[    0.265489] printk: console [ttyS0] disabled
+[    0.286033] 1c28000.serial: ttyS0 at MMIO 0x1c28000 (irq = 22, base_baud = 1500000) is a U6_16550A
+[    1.097492] printk: console [ttyS0] enabled
+[    1.102896] SuperH (H)SCI(F) driver initialized
+[    1.108054] msm_serial: driver initialized
+[    1.148142] sun4i-drm display-engine: bound 1100000.mixer (ops sun8i_mixer_ops)
+[    1.155719] sun4i-drm display-engine: bound 1c0c000.lcd-controller (ops sun4i_tcon_ops)
+[    1.163793] sun8i-dw-hdmi 1ee0000.hdmi: 1ee0000.hdmi supply hvcc not found, using dummy regulator
+[    1.173469] sun8i-dw-hdmi 1ee0000.hdmi: Detected HDMI TX controller v1.32a with HDCP (sun8i_dw_hdmi_phy)
+[    1.183306] sun8i-dw-hdmi 1ee0000.hdmi: registered DesignWare HDMI I2C bus driver
+[    1.191518] sun4i-drm display-engine: bound 1ee0000.hdmi (ops sun8i_dw_hdmi_ops)
+[    1.198921] [drm] Supports vblank timestamp caching Rev 2 (21.10.2013).
+[    1.205536] [drm] No driver support for vblank timestamp query.
+[    1.211866] [drm] Initialized sun4i-drm 1.0.0 20150629 for display-engine on minor 0
+[    1.219706] [drm] Cannot find any crtc or sizes
+[    1.227149] lima 1e80000.gpu: bus rate = 200000000
+[    1.231960] lima 1e80000.gpu: mod rate = 384000000
+[    1.237686] lima 1e80000.gpu: gp - mali450 version major 0 minor 0
+[    1.243918] lima 1e80000.gpu: pp0 - mali450 version major 0 minor 0
+[    1.250237] lima 1e80000.gpu: pp1 - mali450 version major 0 minor 0
+[    1.256549] lima 1e80000.gpu: pp2 - mali450 version major 0 minor 0
+[    1.262862] lima 1e80000.gpu: pp3 - mali450 version major 0 minor 0
+[    1.269178] lima 1e80000.gpu: l2 cache 8K, 4-way, 64byte cache line, 128bit external bus
+[    1.277276] lima 1e80000.gpu: l2 cache 128K, 4-way, 64byte cache line, 128bit external bus
+[    1.286368] [drm] Initialized lima 1.0.0 20190217 for 1e80000.gpu on minor 1
+[    1.293627] cacheinfo: Unable to detect cache hierarchy for CPU 0
+[    1.307617] loop: module loaded
+[    1.315770] libphy: Fixed MDIO Bus: probed
+[    1.320221] tun: Universal TUN/TAP device driver, 1.6
+[    1.326167] thunder_xcv, ver 1.0
+[    1.329453] thunder_bgx, ver 1.0
+[    1.332731] nicpf, ver 1.0
+[    1.336111] hclge is initializing
+[    1.339437] hns3: Hisilicon Ethernet Network Driver for Hip08 Family - version
+[    1.346656] hns3: Copyright (c) 2017 Huawei Corporation.
+[    1.352024] e1000e: Intel(R) PRO/1000 Network Driver - 3.2.6-k
+[    1.357859] e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+[    1.363825] igb: Intel(R) Gigabit Ethernet Network Driver - version 5.6.0-k
+[    1.370788] igb: Copyright (c) 2007-2014 Intel Corporation.
+[    1.376399] igbvf: Intel(R) Gigabit Virtual Function Network Driver - version 2.4.0-k
+[    1.384227] igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
+[    1.390525] sky2: driver version 1.30
+[    1.394951] VFIO - User Level meta-driver version: 0.3
+[    1.401822] ehci_hcd: USB 2.0 'Enhanced' Host Controller (EHCI) Driver
+[    1.408386] ehci-pci: EHCI PCI platform driver
+[    1.412874] ehci-platform: EHCI generic platform driver
+[    1.418349] ehci-platform 1c1a000.usb: EHCI Host Controller
+[    1.423966] ehci-platform 1c1a000.usb: new USB bus registered, assigned bus number 1
+[    1.432161] ehci-platform 1c1a000.usb: irq 10, io mem 0x01c1a000
+[    1.450351] ehci-platform 1c1a000.usb: USB 2.0 started, EHCI 1.00
+[    1.457134] hub 1-0:1.0: USB hub found
+[    1.460926] hub 1-0:1.0: 1 port detected
+[    1.465483] ehci-orion: EHCI orion driver
+[    1.469698] ehci-exynos: EHCI EXYNOS driver
+[    1.473999] ohci_hcd: USB 1.1 'Open' Host Controller (OHCI) Driver
+[    1.480199] ohci-pci: OHCI PCI platform driver
+[    1.484713] ohci-platform: OHCI generic platform driver
+[    1.490115] ohci-platform 1c1a400.usb: Generic Platform OHCI controller
+[    1.496752] ohci-platform 1c1a400.usb: new USB bus registered, assigned bus number 2
+[    1.504762] ohci-platform 1c1a400.usb: irq 11, io mem 0x01c1a400
+[    1.574993] hub 2-0:1.0: USB hub found
+[    1.578780] hub 2-0:1.0: 1 port detected
+[    1.583301] ohci-exynos: OHCI EXYNOS driver
+[    1.588208] usbcore: registered new interface driver usb-storage
+[    1.595930] udc-core: couldn't find an available UDC - added [g_ether] to list of pending drivers
+[    1.606410] sun6i-rtc 1f00000.rtc: registered as rtc0
+[    1.611476] sun6i-rtc 1f00000.rtc: RTC enabled
+[    1.616221] i2c /dev entries driver
+[    1.625773] sdhci: Secure Digital Host Controller Interface driver
+[    1.631967] sdhci: Copyright(c) Pierre Ossman
+[    1.636782] Synopsys Designware Multimedia Card Interface Driver
+[    1.643824] sun50i-h5-pinctrl 1c20800.pinctrl: 1c20800.pinctrl supply vcc-pf not found, using dummy regulator
+[    1.654663] sunxi-mmc 1c0f000.mmc: Got CD GPIO
+[    1.684623] sunxi-mmc 1c0f000.mmc: initialized, max. request size: 16384 KB, uses new timings mode
+[    1.694061] sdhci-pltfm: SDHCI platform and OF driver helper
+[    1.701238] sun8i-h3-r-pinctrl 1f02c00.pinctrl: 1f02c00.pinctrl supply vcc-pl not found, using dummy regulator
+[    1.711988] ledtrig-cpu: registered to indicate activity on CPUs
+[    1.719484] usbcore: registered new interface driver usbhid
+[    1.725138] usbhid: USB HID core driver
+[    1.730666] cedrus 1c0e000.video-codec: Device registered as /dev/video0
+[    1.741557] i2c i2c-0: mv64xxx_i2c_fsm: Ctlr Error -- state: 0x6, status: 0x0, addr: 0x3b, flags: 0x0
+[    1.762372] ac108-codec 0-003b: ac108_i2c_probe - initialization done
+[    1.770570] NET: Registered protocol family 17
+[    1.775237] 9pnet: Installing 9P2000 support
+[    1.779583] Key type dns_resolver registered
+[    1.784776] registered taskstats version 1
+[    1.788908] Loading compiled-in X.509 certificates
+[    1.802176] sun50i-h5-pinctrl 1c20800.pinctrl: 1c20800.pinctrl supply vcc-pd not found, using dummy regulator
+[    1.813312] sun50i-h5-pinctrl 1c20800.pinctrl: 1c20800.pinctrl supply vcc-pg not found, using dummy regulator
+[    1.823248] mmc0: host does not support reading read-only switch, assuming write-enable
+[    1.833466] ehci-platform 1c1d000.usb: EHCI Host Controller
+[    1.839261] mmc0: new high speed SDHC card at address aaaa
+[    1.845005] ehci-platform 1c1d000.usb: new USB bus registered, assigned bus number 3
+[    1.853792] mmcblk0: mmc0:aaaa SC16G 14.8 GiB 
+[    1.859275] ehci-platform 1c1d000.usb: irq 12, io mem 0x01c1d000
+[    1.865333]  mmcblk0: p1 p2
+[    1.882346] ehci-platform 1c1d000.usb: USB 2.0 started, EHCI 1.00
+[    1.889098] hub 3-0:1.0: USB hub found
+[    1.892886] hub 3-0:1.0: 1 port detected
+[    1.898737] ohci-platform 1c1d400.usb: Generic Platform OHCI controller
+[    1.905377] ohci-platform 1c1d400.usb: new USB bus registered, assigned bus number 4
+[    1.913480] ohci-platform 1c1d400.usb: irq 13, io mem 0x01c1d400
+[    1.983010] hub 4-0:1.0: USB hub found
+[    1.986802] hub 4-0:1.0: 1 port detected
+[    1.992692] usb_phy_generic usb_phy_generic.2.auto: usb_phy_generic.2.auto supply vcc not found, using dummy regulator
+[    2.004118] musb-hdrc musb-hdrc.3.auto: MUSB HDRC host driver
+[    2.009883] musb-hdrc musb-hdrc.3.auto: new USB bus registered, assigned bus number 5
+[    2.018342] hub 5-0:1.0: USB hub found
+[    2.022114] hub 5-0:1.0: 1 port detected
+[    2.026560] using random self ethernet address
+[    2.031021] using random host ethernet address
+[    2.035900] usb0: HOST MAC 22:c9:56:1a:06:6b
+[    2.040203] usb0: MAC 52:1d:e0:a7:fb:0d
+[    2.044062] using random self ethernet address
+[    2.048513] using random host ethernet address
+[    2.053012] g_ether gadget: Ethernet Gadget, version: Memorial Day 2008
+[    2.059629] g_ether gadget: g_ether ready
+[    2.065918] ac108-codec 0-003b: ac108_codec_probe - initialization done
+[    2.072670] ac108-codec 0-003b: ac108_set_sysclk: ID 0, freq 24000000
+[    2.079434] sun4i_i2s_set_sysclk: mclk=100000000
+[    2.084077] ac108-codec 0-003b: ac108_set_fmt entern
+[    2.089051] ac108-codec 0-003b: AC108 set to work as Slave
+[    2.094851] ac108-codec 0-003b: AC108 config I2S format
+[    2.100092] ac108-codec 0-003b: AC108 config BCLK & LRCK polarity: BCLK_normal, LRCK_normal
+[    2.111206] asoc-simple-card sound_ac108: ac108-codec.0-003b <-> 1c22000.i2s mapping ok
+[    2.119237] asoc-simple-card sound_ac108: ASoC: no DMI vendor name!
+[    2.131525] sun6i-rtc 1f00000.rtc: setting system clock to 1970-01-01T00:00:13 UTC (13)
+[    2.139902] gmac-3v3: disabling
+[    2.143054] usb0-vbus: disabling
+[    2.146278] ALSA device list:
+[    2.149253]   #0: ac108-card
+[    2.209198] random: fast init done
+[    2.236800] EXT4-fs (mmcblk0p2): recovery complete
+[    2.242334] EXT4-fs (mmcblk0p2): mounted filesystem with ordered data mode. Opts: (null)
+[    2.250488] VFS: Mounted root (ext4 filesystem) on device 179:2.
+[    2.267206] devtmpfs: mounted
+[    2.271080] Freeing unused kernel memory: 1472K
+[    2.275681] Run /sbin/init as init process
+[    2.536318] systemd[1]: System time before build time, advancing clock.
+[    2.575433] random: systemd: uninitialized urandom read (16 bytes read)
+[    2.584094] random: systemd: uninitialized urandom read (16 bytes read)
+[    2.593920] systemd[1]: systemd 229 running in system mode. (+PAM +AUDIT +SELINUX +IMA +APPARMOR +SMACK +SYSVINIT +UTMP +LIBCRYPTSETUP +GCRYPT +GNUTLS +ACL +XZ -LZ4 +SECCOMP +BLKID +ELFUTILS +KMOD -IDN)
+[    2.612389] systemd[1]: Detected architecture arm64.

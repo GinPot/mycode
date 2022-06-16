@@ -1,0 +1,1 @@
+cmd_/root/work/linux/driver/50.uvc_camera/uvc_camera.ko := aarch64-linux-gnu-ld -r  -EL  -maarch64elf -T ../scripts/module-common.lds -T ../arch/arm64/kernel/module.lds  --build-id  -o /root/work/linux/driver/50.uvc_camera/uvc_camera.ko /root/work/linux/driver/50.uvc_camera/uvc_camera.o /root/work/linux/driver/50.uvc_camera/uvc_camera.mod.o ;  true

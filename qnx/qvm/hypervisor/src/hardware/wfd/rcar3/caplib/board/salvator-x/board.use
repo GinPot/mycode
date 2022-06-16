@@ -1,5 +1,0 @@
-Video Capture Library for R-Car H3-SiP Salvator-X Board
-
-Required libraries:
-    libcapture-soc-rcar3.so
-    libcapture-decoder-adv7282.so

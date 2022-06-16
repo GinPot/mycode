@@ -1,0 +1,10 @@
+prefix=/root/work/display/server/libjpeg-turbo-2.1.3/build/install_lib/usr/local
+exec_prefix=/root/work/display/server/libjpeg-turbo-2.1.3/build/install_lib/usr/local
+libdir=/root/work/display/server/libjpeg-turbo-2.1.3/build/install_lib/usr/local/lib
+includedir=/root/work/display/server/libjpeg-turbo-2.1.3/build/install_lib/usr/local/include
+
+Name: libjpeg
+Description: A SIMD-accelerated JPEG codec that provides the libjpeg API
+Version: 2.1.3
+Libs: -L${libdir} -ljpeg
+Cflags: -I${includedir}

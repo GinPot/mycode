@@ -1,0 +1,56 @@
+[  141.835686] camerauvc: loading out-of-tree module taints kernel.
+[  141.837136] uvc_camera: uvc_camera_init => insmod.
+[  141.837296] uvc_camera: uvc_probe => device 2, Probing generic UVC device 1
+[  141.837310] uvc_camera: uvc_probe => dev->udev=3-1, dev->intf=3-1:1.0, dev->name=UVC Camera (1224:2a25), dev->intfnum=0, dev->quirks=0, dev->info->quirks =0
+[  141.837314] uvc_camera: uvc_parse_control => buflen = 103
+[  141.837322] uvc_camera: uvc_parse_standard_control => dev->intf->num_altsetting=1    buflen = 13, 36 1 0 1 103 1 1 18
+[  141.837326] uvc_camera: uvc_parse_standard_control => UVC_VC_HEADER, n=1
+[  141.837332] uvc_camera: uvc_parse_standard_control => dev->uvc_version=256 dev->clock_frequency=30000000
+[  141.837341] uvc_camera: uvc_parse_streaming => buflen=255, 15, 36 1 2 255 0 132 0 5
+[  141.837490] uvc_camera: uvc_parse_streaming => p=2 n=1 buffer[size-2]=0 1 0 0 11
+[  141.837499] uvc_camera: uvc_parse_streaming => nformats=2 nframes=5 nintervals=5
+[  141.837506] uvc_camera: uvc_parse_format => buflen=240, 11, 36 6 1 4 0
+[  141.837511] uvc_camera: uvc_parse_format => Found foramt MJPEG.
+[  141.837519] uvc_camera: uvc_parse_format => buflen111=229, 30, 36 7 1 0 128 6 0 1
+[  141.837526] uvc_camera: uvc_parse_format => - 1920x1080 (25.0 fps)
+[  141.837531] uvc_camera: uvc_parse_format => - 1280x720 (25.0 fps)
+[  141.837537] uvc_camera: uvc_parse_format => - 640x480 (25.0 fps)
+[  141.837542] uvc_camera: uvc_parse_format => - 640x320 (25.0 fps)
+[  141.837548] uvc_camera: uvc_parse_format => buflen111=109, 22, 36 3 0 3 0
+[  141.837553] uvc_camera: uvc_parse_format => buflen = 81, buffer - start = 159
+[  141.837559] uvc_camera: uvc_parse_format => buflen=81, 27, 36 4 2 1 89
+[  141.837564] uvc_camera: uvc_parse_format => Found foramt YUV 4:2:2(YUYV).
+[  141.837571] uvc_camera: uvc_parse_format => buflen111=54, 30, 36 5 1 0 128 6 0 1
+[  141.837577] uvc_camera: uvc_parse_format => - 640x360 (25.0 fps)
+[  141.837583] uvc_camera: uvc_parse_format => buflen111=24, 18, 36 3 0 3 0
+[  141.837587] uvc_camera: uvc_parse_format => buflen = 0, buffer - start = 81
+[  141.837591] uvc_camera: uvc_parse_streaming => num_altstting=2
+[  141.837595] uvc_camera: uvc_find_endpoint => alts->desc.bNumEndpoints = 0
+[  141.837599] uvc_camera: uvc_find_endpoint => alts->desc.bNumEndpoints = 1
+[  141.837604] uvc_camera: uvc_find_endpoint => ep->desc.bEndpointAddress = 132, epaddr = 132
+[  141.837608] uvc_camera: uvc_parse_streaming => psize=1400		c00
+[  141.837612] uvc_camera: uvc_parse_streaming => streaming->maxpsize=3072
+[  141.837619] uvc_camera: uvc_parse_standard_control => dev->intf->num_altsetting=1    buflen = 18, 36 2 1 1 2 0 0 0
+[  141.837627] uvc_camera: uvc_parse_standard_control => buflen=90  18, 36 2 1 1 2 0 0 0
+[  141.837633] uvc_camera: uvc_parse_standard_control => 1111111111  0 0 3 255 255
+[  141.837639] uvc_camera: uvc_alloc_entity => extra_size = 56, num_inputs = 0, size = 288
+[  141.837645] uvc_camera: uvc_parse_standard_control => term->name=Camera 1.
+[  141.837653] uvc_camera: uvc_parse_standard_control => dev->intf->num_altsetting=1    buflen = 11, 36 5 2 1 0 26 36 6
+[  141.837658] uvc_camera: uvc_alloc_entity => extra_size = 56, num_inputs = 1, size = 345
+[  141.837665] uvc_camera: uvc_parse_standard_control => dev->uvc_version=100. buffer[8+n]=0
+[  141.837670] uvc_camera: uvc_parse_standard_control => unit->name=Processing 2.
+[  141.837677] uvc_camera: uvc_parse_standard_control => dev->intf->num_altsetting=1    buflen = 26, 36 6 3 112 51 74 186 44
+[  141.837682] uvc_camera: uvc_alloc_entity => extra_size = 56, num_inputs = 1, size = 345
+[  141.837688] uvc_camera: uvc_parse_standard_control => buffer[23+p+n]=0
+[  141.837692] uvc_camera: uvc_parse_standard_control => unit->name=Extension 3.
+[  141.837700] uvc_camera: uvc_parse_standard_control => dev->intf->num_altsetting=1    buflen = 26, 36 6 4 148 115 71 190 217
+[  141.837704] uvc_camera: uvc_alloc_entity => extra_size = 56, num_inputs = 1, size = 345
+[  141.837709] uvc_camera: uvc_parse_standard_control => buffer[23+p+n]=0
+[  141.837713] uvc_camera: uvc_parse_standard_control => unit->name=Extension 4.
+[  141.837720] uvc_camera: uvc_parse_standard_control => dev->intf->num_altsetting=1    buflen = 9, 36 3 5 1 1 133 3 64
+[  141.837725] uvc_camera: uvc_alloc_entity => extra_size = 0, num_inputs = 1, size = 233
+[  141.837730] uvc_camera: uvc_parse_standard_control => term->name=Output 5.
+[  141.837735] uvc_camera: uvc_parse_control => Found a Status endpoint (addr 85).
+[  141.837741] uvc_camera: uvc_probe => Found UVC 1.00 device USB PHY 2.0 (1224:2a25)
+[  141.837833] usbcore: registered new interface driver uvcvideo
+[  141.837837] uvc_camera: uvc_camera_init => USB video class driver init success.

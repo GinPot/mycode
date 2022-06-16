@@ -1,0 +1,1 @@
+cmd_/disk3/wuping/tmp/shmem_linux/shmem.ko := aarch64-linux-android-ld -EL -r  -T ../scripts/module-common.lds --build-id  -o /disk3/wuping/tmp/shmem_linux/shmem.ko /disk3/wuping/tmp/shmem_linux/shmem.o /disk3/wuping/tmp/shmem_linux/shmem.mod.o

@@ -1,8 +1,0 @@
-10,12c10,12
-< Retval = 0
-< Retval = 0
-< Retval = 0
----
-> Retval = 2
-> Retval = 2
-> Retval = 2

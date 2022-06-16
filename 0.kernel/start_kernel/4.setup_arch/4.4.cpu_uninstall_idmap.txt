@@ -1,0 +1,45 @@
+
+
+
+
+
+
+#define VA_BITS			(CONFIG_ARM64_VA_BITS)	48
+#define TCR_T0SZ_OFFSET		0
+#define TCR_T0SZ(x)		((UL(64) - (x)) << TCR_T0SZ_OFFSET)		((64-48) << 0)
+
+
+
+#define cpu_set_default_tcr_t0sz()	__cpu_set_tcr_t0sz(TCR_T0SZ(VA_BITS))
+
+
+
+
+
+
+
+cpu_uninstall_idmap();
+	cpu_set_reserved_ttbr0();												//idmap的页表基地址ttbr0_el1设置为empty_zero_page
+		write_sysreg(ttbr, ttbr0_el1);
+	local_flush_tlb_all();													//无效所有的tlb，mmu的缓存
+	cpu_set_default_tcr_t0sz();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,44 @@
+
+0.start_kernel()
+	setup_arch()
+1.		unflatten_device_tree()																//设备树展开
+
+	vfs_caches_init()
+		mnt_init()
+			sysfs_init()
+2.				register_filesystem(&sysfs_fs_type)											//创建虚拟系统文件分区dev、sys等,可以挂载(mount -t sysfs none /mnt) 888
+
+	arch_call_rest_init()
+		rest_init()
+3.			pid = kernel_thread(kernel_init, NULL, CLONE_FS)								//创建第一个线程，即为1号进程；初始化驱动后进入用户态
+				kernel_init_freeable()
+					...
+					driver_init()															//驱动模型的初始化：bus、class、platform的初始化
+4.						devices_init();														//sys/下一级目录初始化; platform虚拟总线初始化、devices_add()
+
+				do_basic_setup()
+					do_initcall_level()
+
+5.						postcore_initcall(i2c_init)								__define_initcall(fn, 2)		//i2c总线初始化
+
+6.						arch_initcall_sync(of_platform_default_populate_init)	__define_initcall(fn, 3s)		//设备树展开后注册platform_device
+
+7.						module_init(x)											__define_initcall(fn, 6)		//普通驱动注册
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

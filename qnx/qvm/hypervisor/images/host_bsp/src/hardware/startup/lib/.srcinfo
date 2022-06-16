@@ -1,3 +1,0 @@
-needs public/<CPU>
-needs public/hw
-needs public/sys

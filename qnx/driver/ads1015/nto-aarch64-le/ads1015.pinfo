@@ -1,8 +1,0 @@
-STATE=Desktop
-INSTALLDIR=aarch64le/bin/
-INSTALLNAME=ads1015
-NAME=ads1015
-USER=wuping
-HOST=wuping
-DATE=2019/06/05-21:08:12-CST
-DESCRIPTION=Hypervisor shared memory device tutorial for a host

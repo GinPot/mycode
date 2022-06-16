@@ -1,0 +1,1 @@
+cmd_/root/work/linux/driver/10.kthread/kthread.ko := aarch64-linux-gnu-ld -r  -EL  -maarch64elf -T ../scripts/module-common.lds -T ../arch/arm64/kernel/module.lds  --build-id  -o /root/work/linux/driver/10.kthread/kthread.ko /root/work/linux/driver/10.kthread/kthread.o /root/work/linux/driver/10.kthread/kthread.mod.o ;  true

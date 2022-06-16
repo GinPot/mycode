@@ -1,0 +1,205 @@
+	.align	11											//该寄存器地址低11bit是reserve，bit[63:11]表示vector base address，所以需要把异常向量表2k对齐
+ENTRY(vectors)
+	kernel_ventry	1, sync_invalid			// Synchronous EL1t
+	kernel_ventry	1, irq_invalid			// IRQ EL1t
+	kernel_ventry	1, fiq_invalid			// FIQ EL1t
+	kernel_ventry	1, error_invalid		// Error EL1t
+
+	kernel_ventry	1, sync				// Synchronous EL1h
+	kernel_ventry	1, irq				// IRQ EL1h				b	el1_irq
+	kernel_ventry	1, fiq_invalid		// FIQ EL1h
+	kernel_ventry	1, error			// Error EL1h
+
+	kernel_ventry	0, sync				// Synchronous 64-bit EL0
+	kernel_ventry	0, irq				// IRQ 64-bit EL0		b	el0_irq
+	kernel_ventry	0, fiq_invalid		// FIQ 64-bit EL0
+	kernel_ventry	0, error			// Error 64-bit EL0
+
+#ifdef CONFIG_COMPAT
+	kernel_ventry	0, sync_compat, 32			// Synchronous 32-bit EL0
+	kernel_ventry	0, irq_compat, 32			// IRQ 32-bit EL0
+	kernel_ventry	0, fiq_invalid_compat, 32	// FIQ 32-bit EL0
+	kernel_ventry	0, error_compat, 32			// Error 32-bit EL0
+#else
+	kernel_ventry	0, sync_invalid, 32			// Synchronous 32-bit EL0
+	kernel_ventry	0, irq_invalid, 32			// IRQ 32-bit EL0
+	kernel_ventry	0, fiq_invalid, 32			// FIQ 32-bit EL0
+	kernel_ventry	0, error_invalid, 32		// Error 32-bit EL0
+#endif
+END(vectors)
+
+
+
+.macro kernel_ventry, el, label, regsize = 64			//带有3个参数，regsize表示寄存器宽度，没有传第三个值就用默认参数64
+	.align 7
+
+alternative_if ARM64_UNMAP_KERNEL_AT_EL0				//修复meltdown相关补丁
+	.if	\el == 0
+	.if	\regsize == 64
+	mrs	x30, tpidrro_el0
+	msr	tpidrro_el0, xzr
+	.else
+	mov	x30, xzr
+	.endif
+	.endif
+alternative_else_nop_endif
+
+	sub	sp, sp, #S_FRAME_SIZE
+	/*
+	 * Test whether the SP has overflowed, without corrupting a GPR.
+	 * Task and IRQ stacks are aligned to (1 << THREAD_SHIFT).
+	 */
+	add	sp, sp, x0			// sp' = sp + x0
+	sub	x0, sp, x0			// x0' = sp' - x0 = (sp + x0) - x0 = sp
+	tbnz	x0, #THREAD_SHIFT, 0f
+	sub	x0, sp, x0			// x0'' = sp' - x0' = (sp + x0) - sp = x0
+	sub	sp, sp, x0			// sp'' = sp' - x0 = (sp + x0) - x0 = sp
+
+	b	el\()\el\()_\label									//“\()”表示拼接前后字符串，\el表示el的值，\label表示label的值
+0:
+	/*
+	 * Either we've just detected an overflow, or we've taken an exception
+	 * while on the overflow stack. Either way, we won't return to
+	 * userspace, and can clobber EL0 registers to free up GPRs.
+	 */
+
+	/* Stash the original SP (minus S_FRAME_SIZE) in tpidr_el0. */
+	msr	tpidr_el0, x0
+
+	/* Recover the original x0 value and stash it in tpidrro_el0 */
+	sub	x0, sp, x0
+	msr	tpidrro_el0, x0
+
+	/* Switch to the overflow stack */
+	adr_this_cpu sp, overflow_stack + OVERFLOW_STACK_SIZE, x0
+
+	/*
+	 * Check whether we were already on the overflow stack. This may happen
+	 * after panic() re-enables interrupts.
+	 */
+	mrs	x0, tpidr_el0			// sp of interrupted context
+	sub	x0, sp, x0			// delta with top of overflow stack
+	tst	x0, #~(OVERFLOW_STACK_SIZE - 1)	// within range?
+	b.ne	__bad_stack			// no? -> bad stack pointer
+
+	/* We were already on the overflow stack. Restore sp/x0 and carry on. */
+	sub	sp, sp, x0
+	mrs	x0, tpidrro_el0
+
+	b	el\()\el\()_\label
+
+
+.macro	kernel_entry, el, regsize = 64
+
+	stp	x0, x1, [sp, #16 * 0]
+	stp	x2, x3, [sp, #16 * 1]
+	stp	x4, x5, [sp, #16 * 2]
+	stp	x6, x7, [sp, #16 * 3]
+	stp	x8, x9, [sp, #16 * 4]
+	stp	x10, x11, [sp, #16 * 5]
+	stp	x12, x13, [sp, #16 * 6]
+	stp	x14, x15, [sp, #16 * 7]
+	stp	x16, x17, [sp, #16 * 8]
+	stp	x18, x19, [sp, #16 * 9]
+	stp	x20, x21, [sp, #16 * 10]
+	stp	x22, x23, [sp, #16 * 11]
+	stp	x24, x25, [sp, #16 * 12]
+	stp	x26, x27, [sp, #16 * 13]
+	stp	x28, x29, [sp, #16 * 14]
+
+	add	x21, sp, #S_FRAME_SIZE
+	get_current_task tsk
+	/* Save the task's original addr_limit and set USER_DS */
+	ldr	x20, [tsk, #TSK_TI_ADDR_LIMIT]
+	str	x20, [sp, #S_ORIG_ADDR_LIMIT]
+	mov	x20, #USER_DS
+	str	x20, [tsk, #TSK_TI_ADDR_LIMIT]
+	/* No need to reset PSTATE.UAO, hardware's already set it to 0 for us */
+
+	mrs	x22, elr_el1
+	mrs	x23, spsr_el1
+	stp	lr, x21, [sp, #S_LR]
+
+	/*
+	 * In order to be able to dump the contents of struct pt_regs at the
+	 * time the exception was taken (in case we attempt to walk the call
+	 * stack later), chain it together with the stack frames.
+	 */
+	stp	x29, x22, [sp, #S_STACKFRAME]
+
+	add	x29, sp, #S_STACKFRAME
+
+	stp	x22, x23, [sp, #S_PC]
+
+	/* Save pmr */
+	rnative_if ARM64_HAS_IRQ_PRIO_MASKING
+	mrs_s	x20, SYS_ICC_PMR_EL1
+	str	x20, [sp, #S_PMR_SAVE]
+	rnative_else_nop_endif
+
+	/*
+	 * Registers that may be useful after this macro is invoked:
+	 *
+	 * x21 - aborted SP
+	 * x22 - aborted PC
+	 * x23 - aborted PSTATE
+	*/
+.endm
+
+
+
+el0_irq:
+	kernel_entry 0
+el0_irq_naked:
+	enable_da_f
+
+	ct_user_exit
+	tbz	x22, #55, 1f
+	bl	do_el0_irq_bp_hardening
+1:
+	irq_handler
+
+	b	ret_to_user						//回到用户空间
+ENDPROC(el0_irq)
+
+
+
+
+
+el1_irq:
+	kernel_entry 1
+	enable_da_f
+
+	irq_handler
+
+	ldr	x24, [tsk, #TSK_TI_PREEMPT]		// get preempt count
+alternative_if ARM64_HAS_IRQ_PRIO_MASKING
+	/*
+	 * DA_F were cleared at start of handling. If anything is set in DAIF,
+	 * we come back from an NMI, so skip preemption
+	 */
+	mrs	x0, daif
+	orr	x24, x24, x0
+alternative_else_nop_endif
+	cbnz	x24, 1f						// preempt count != 0 || NMI return path
+	bl	preempt_schedule_irq			// irq en/disable is done inside
+1:
+
+	kernel_exit 1						//在kernel空间退出
+ENDPROC(el1_irq)
+
+
+
+.macro	irq_handler
+	ldr_l	x1, handle_arch_irq
+	mov	x0, sp
+	irq_stack_entry
+	blr	x1
+	irq_stack_exit
+.endm
+
+
+
+
+
+

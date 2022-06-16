@@ -1,0 +1,444 @@
+Starting kernel ...
+
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[    0.000000] Linux version 5.2.0 (wuping@ubuntu) (gcc version 7.4.1 20181213 [linaro-7.4-2019.02 revision 56ec6f6b99cc167ff0c2f8e1a2eed33b1edc85d4] (Linaro GCC 7.4-2019.02)) #348 SMP PREEMPT Sun May 31 11:24:21 CST 2020
+[    0.000000] Machine model: GinPot H5
+[    0.000000] efi: Getting EFI parameters from FDT:
+[    0.000000] efi: UEFI not found.
+[    0.000000] cma: Reserved 32 MiB at 0x00000000be000000
+[    0.000000] NUMA: No NUMA configuration found
+[    0.000000] NUMA: Faking a node at [mem 0x0000000040000000-0x00000000bfffffff]
+[    0.000000] NUMA: NODE_DATA [mem 0xbdbe4840-0xbdbe5fff]
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000040000000-0x00000000bfffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000040000000-0x00000000bfffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000040000000-0x00000000bfffffff]
+[    0.000000] On node 0 totalpages: 524288
+[    0.000000]   DMA32 zone: 8192 pages used for memmap
+[    0.000000]   DMA32 zone: 0 pages reserved
+[    0.000000]   DMA32 zone: 524288 pages, LIFO batch:63
+[    0.000000] psci: probing for conduit method from DT.
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.000000] psci: Using standard PSCI v0.2 function IDs
+[    0.000000] psci: MIGRATE_INFO_TYPE not supported.
+[    0.000000] psci: SMC Calling Convention v1.1
+[    0.000000] percpu: Embedded 23 pages/cpu s57048 r8192 d28968 u94208
+[    0.000000] pcpu-alloc: s57048 r8192 d28968 u94208 alloc=23*4096
+[    0.000000] pcpu-alloc: [0] 0 [0] 1 [0] 2 [0] 3 
+[    0.000000] Detected VIPT I-cache on CPU0
+[    0.000000] CPU features: detected: ARM erratum 845719
+[    0.000000] Speculative Store Bypass Disable mitigation not required
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 516096
+[    0.000000] Policy zone: DMA32
+[    0.000000] Kernel command line: console=ttyS0,115200 earlyprintk root=/dev/mmcblk0p2 rootfstype=ext4 rw rootwait panic=10 snd_soc_ac108.dyndbg=+p ac108_card.dyndbg=+p sunh5_drm.dyndbg=+p sunh5_mixer.dyndbg=+p sunh5_tcon.dyndbg=+p sunh5_drm_hdmi.dyndbg=+p
+[    0.000000] Memory: 2002864K/2097152K available (12860K kernel code, 2104K rwdata, 7032K rodata, 1472K init, 460K bss, 61520K reserved, 32768K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1
+[    0.000000] rcu: Preemptible hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=256 to nr_cpu_ids=4.
+[    0.000000] 	Tasks RCU enabled.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=4
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] GIC: Using split EOI/Deactivate mode
+[    0.000000] random: get_random_bytes called from start_kernel+0x2c0/0x474 with crng_init=0
+[    0.000000] arch_timer: cp15 timer(s) running at 24.00MHz (phys).
+[    0.000000] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[    0.000005] sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[    0.000182] Console: colour dummy device 80x25
+[    0.000275] Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=96000)
+[    0.000288] pid_max: default: 32768 minimum: 301
+[    0.000378] LSM: Security Framework initializing
+[    0.001566] Dentry cache hash table entries: 262144 (order: 9, 2097152 bytes)
+[    0.002162] Inode-cache hash table entries: 131072 (order: 8, 1048576 bytes)
+[    0.002211] Mount-cache hash table entries: 4096 (order: 3, 32768 bytes)
+[    0.002239] Mountpoint-cache hash table entries: 4096 (order: 3, 32768 bytes)
+[    0.024044] ASID allocator initialised with 32768 entries
+[    0.032036] rcu: Hierarchical SRCU implementation.
+[    0.044715] EFI services will not be available.
+[    0.052182] smp: Bringing up secondary CPUs ...
+[    0.085192] Detected VIPT I-cache on CPU1
+[    0.085252] CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[    0.116720] Detected VIPT I-cache on CPU2
+[    0.116758] CPU2: Booted secondary processor 0x0000000002 [0x410fd034]
+[    0.148744] Detected VIPT I-cache on CPU3
+[    0.148777] CPU3: Booted secondary processor 0x0000000003 [0x410fd034]
+[    0.148858] smp: Brought up 1 node, 4 CPUs
+[    0.148880] SMP: Total of 4 processors activated.
+[    0.148888] CPU features: detected: 32-bit EL0 Support
+[    0.148896] CPU features: detected: CRC32 instructions
+[    0.149443] CPU: All CPU(s) started at EL2
+[    0.149466] alternatives: patching kernel code
+[    0.151442] devtmpfs: initialized
+[    0.156863] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[    0.156897] futex hash table entries: 1024 (order: 4, 65536 bytes)
+[    0.158465] pinctrl core: initialized pinctrl subsystem
+[    0.159751] DMI not present or invalid.
+[    0.160192] NET: Registered protocol family 16
+[    0.160942] audit: initializing netlink subsys (disabled)
+[    0.161146] audit: type=2000 audit(0.160:1): state=initialized audit_enabled=0 res=1
+[    0.162318] cpuidle: using governor menu
+[    0.162962] hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[    0.166344] DMA: preallocated 256 KiB pool for atomic allocations
+[    0.167623] Serial: AMBA PL011 UART driver
+[    0.190013] HugeTLB registered 1.00 GiB page size, pre-allocated 0 pages
+[    0.190028] HugeTLB registered 32.0 MiB page size, pre-allocated 0 pages
+[    0.190036] HugeTLB registered 2.00 MiB page size, pre-allocated 0 pages
+[    0.190044] HugeTLB registered 64.0 KiB page size, pre-allocated 0 pages
+[    0.192312] cryptd: max_cpu_qlen set to 1000
+[    0.196382] ACPI: Interpreter disabled.
+[    0.198353] vgaarb: loaded
+[    0.198652] SCSI subsystem initialized
+[    0.198825] libata version 3.00 loaded.
+[    0.199093] usbcore: registered new interface driver usbfs
+[    0.199139] usbcore: registered new interface driver hub
+[    0.199209] usbcore: registered new device driver usb
+[    0.199928] media: Linux media interface: v0.10
+[    0.199962] videodev: Linux video capture interface: v2.00
+[    0.200016] pps_core: LinuxPPS API ver. 1 registered
+[    0.200023] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.200046] PTP clock support registered
+[    0.200173] EDAC MC: Ver: 3.0.0
+[    0.201323] FPGA manager framework
+[    0.201453] Advanced Linux Sound Architecture Driver Initialized.
+[    0.202524] clocksource: Switched to clocksource arch_sys_counter
+[    0.202730] VFS: Disk quotas dquot_6.6.0
+[    0.202797] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)
+[    0.203032] pnp: PnP ACPI: disabled
+[    0.210017] NET: Registered protocol family 2
+[    0.210466] tcp_listen_portaddr_hash hash table entries: 1024 (order: 2, 16384 bytes)
+[    0.210578] TCP established hash table entries: 16384 (order: 5, 131072 bytes)
+[    0.210792] TCP bind hash table entries: 16384 (order: 6, 262144 bytes)
+[    0.211103] TCP: Hash tables configured (established 16384 bind 16384)
+[    0.211244] UDP hash table entries: 1024 (order: 3, 32768 bytes)
+[    0.211313] UDP-Lite hash table entries: 1024 (order: 3, 32768 bytes)
+[    0.211500] NET: Registered protocol family 1
+[    0.212001] RPC: Registered named UNIX socket transport module.
+[    0.212009] RPC: Registered udp transport module.
+[    0.212015] RPC: Registered tcp transport module.
+[    0.212020] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    0.212034] PCI: CLS 0 bytes, default 64
+[    0.213175] kvm [1]: IPA Size Limit: 40bits
+[    0.214148] kvm [1]: vgic interrupt IRQ1
+[    0.214280] kvm [1]: Hyp mode initialized successfully
+[    0.221373] Initialise system trusted keyrings
+[    0.221529] workingset: timestamp_bits=44 max_order=19 bucket_order=0
+[    0.229521] squashfs: version 4.0 (2009/01/31) Phillip Lougher
+[    0.230339] NFS: Registering the id_resolver key type
+[    0.230365] Key type id_resolver registered
+[    0.230371] Key type id_legacy registered
+[    0.230385] nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[    0.230581] 9p: Installing v9fs 9p2000 file system support
+[    0.232273] Key type asymmetric registered
+[    0.232282] Asymmetric key parser 'x509' registered
+[    0.232328] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 244)
+[    0.232337] io scheduler mq-deadline registered
+[    0.232344] io scheduler kyber registered
+[    0.234773] sun4i-usb-phy 1c19400.phy: Couldn't request ID GPIO
+[    0.240603] sun8i-h3-r-pinctrl 1f02c00.pinctrl: initialized sunXi PIO driver
+[    0.244524] sun50i-h5-pinctrl 1c20800.pinctrl: initialized sunXi PIO driver
+[    0.248726] EINJ: ACPI disabled.
+[    0.263851] Serial: 8250/16550 driver, 4 ports, IRQ sharing enabled
+[    0.265684] sun50i-h5-pinctrl 1c20800.pinctrl: 1c20800.pinctrl supply vcc-pa not found, using dummy regulator
+[    0.266108] printk: console [ttyS0] disabled
+[    0.286654] 1c28000.serial: ttyS0 at MMIO 0x1c28000 (irq = 22, base_baud = 1500000) is a U6_16550A
+[    1.105869] printk: console [ttyS0] enabled
+[    1.111278] SuperH (H)SCI(F) driver initialized
+[    1.116436] msm_serial: driver initialized
+[    1.123951] lima 1e80000.gpu: bus rate = 200000000
+[    1.128760] lima 1e80000.gpu: mod rate = 384000000
+[    1.134466] lima 1e80000.gpu: gp - mali450 version major 0 minor 0
+[    1.140700] lima 1e80000.gpu: pp0 - mali450 version major 0 minor 0
+[    1.147017] lima 1e80000.gpu: pp1 - mali450 version major 0 minor 0
+[    1.153328] lima 1e80000.gpu: pp2 - mali450 version major 0 minor 0
+[    1.159644] lima 1e80000.gpu: pp3 - mali450 version major 0 minor 0
+[    1.165955] lima 1e80000.gpu: l2 cache 8K, 4-way, 64byte cache line, 128bit external bus
+[    1.174052] lima 1e80000.gpu: l2 cache 128K, 4-way, 64byte cache line, 128bit external bus
+[    1.183180] [drm] Initialized lima 1.0.0 20190217 for 1e80000.gpu on minor 0
+[    1.190474] sunh5-drm display-engine: sunh5_drv_probe: Enter
+[    1.196165] sunh5-drm display-engine: sunh5_drv_probe: pipeline=mixer
+[    1.202622] sunh5-drm display-engine: sunh5_drv_add_endpoint: Adding component mixer
+[    1.210377] sunh5-drm display-engine: sunh5_drv_traverse_endpoints: get prot port
+[    1.217871] sunh5-drm display-engine: sunh5_drv_traverse_endpoints: get remote port parent lcd-controller
+[    1.227438] sunh5-drm display-engine: sunh5_drv_add_endpoint: Adding component lcd-controller
+[    1.235966] sunh5-drm display-engine: sunh5_drv_traverse_endpoints: get prot port
+[    1.243454] sunh5-drm display-engine: sunh5_drv_traverse_endpoints: get remote port parent hdmi
+[    1.252154] sunh5-drm display-engine: sunh5_drv_add_endpoint: Adding component hdmi
+[    1.259814] sunh5-drm display-engine: sunh5_drv_traverse_endpoints: get prot port
+[    1.267302] sunh5-drm display-engine: sunh5_drv_traverse_endpoints: get remote port parent connector
+[    1.276683] sunh5-mixer 1100000.mixer: compare_of: Comparing of node mixer witch mixer
+[    1.284604] sunh5-mixer 1100000.mixer: compare_of: Comparing of node mixer witch lcd-controller
+[    1.293457] sunh5-tcon 1c0c000.lcd-controller: sunh5_tcon_probe: Enter
+[    1.299991] sunh5-mixer 1100000.mixer: compare_of: Comparing of node mixer witch lcd-controller
+[    1.308691] sunh5-tcon 1c0c000.lcd-controller: compare_of: Comparing of node lcd-controller witch lcd-controller
+[    1.318873] sunh5-mixer 1100000.mixer: compare_of: Comparing of node mixer witch hdmi
+[    1.326708] sunh5-tcon 1c0c000.lcd-controller: compare_of: Comparing of node lcd-controller witch hdmi
+[    1.336182] sunh5-dw-hdmi 1ee0000.hdmi: sunh5_dw_hdmi_probe: Enter
+[    1.342372] sunh5-mixer 1100000.mixer: compare_of: Comparing of node mixer witch hdmi
+[    1.350204] sunh5-tcon 1c0c000.lcd-controller: compare_of: Comparing of node lcd-controller witch hdmi
+[    1.359510] sunh5-dw-hdmi 1ee0000.hdmi: compare_of: Comparing of node hdmi witch hdmi
+[    1.367343] sunh5-drm display-engine: sunh5_drv_bind: Enter
+[    1.373041] sunh5-mixer 1100000.mixer: sunh5_mixer_bind: Enter
+[    1.378899] sunh5-mixer 1100000.mixer: sunh5_mixer_of_get_id: ep->name=endpoint	remote->name=endpoint	
+[    1.388208] sunh5-mixer 1100000.mixer: sunh5_mixer_of_get_id: of_ep.id=0 of_ep.port=0
+[    1.428845] sunh5-drm display-engine: bound 1100000.mixer (ops sunh5_mixer_ops)
+[    1.436165] sunh5-tcon 1c0c000.lcd-controller: sunh5_tcon_bind: Enter
+[    1.442779] sunh5-drm display-engine: sunh5_crtc_init: Enter
+[    1.448451] sunh5-mixer 1100000.mixer: sunh5_layers_init: Enter
+[    1.454377] sunh5-drm display-engine: sunh5_vi_layer_init_one: Enter
+[    1.460761] sunh5-drm display-engine: sunh5_ui_layer_init_one: Enter
+[    1.467129] sunh5-drm display-engine: sunh5_ui_layer_init_one: Enter
+[    1.473494] sunh5-drm display-engine: sunh5_ui_layer_init_one: Enter
+[    1.479882] sunh5-drm display-engine: bound 1c0c000.lcd-controller (ops sunh5_tcon_ops)
+[    1.487890] sunh5-dw-hdmi 1ee0000.hdmi: sunh5_dw_hdmi_bind: Enter
+[    1.494044] sunh5-dw-hdmi 1ee0000.hdmi: 1ee0000.hdmi supply hvcc not found, using dummy regulator
+[    1.503083] sunh5-dw-hdmi 1ee0000.hdmi: sunh5_phy_clk_create: Enter
+[    1.509417] sunh5-dw-hdmi 1ee0000.hdmi: sunh5_phy_clk_recalc_rate: Enter
+[    1.516133] sunh5-dw-hdmi 1ee0000.hdmi: sunh5_hdmi_phy_init_h3: Enter
+[    1.523171] sunh5-dw-hdmi 1ee0000.hdmi: Detected HDMI TX controller v1.32a with HDCP (sunh5_dw_hdmi_phy)
+[    1.532996] sunh5-dw-hdmi 1ee0000.hdmi: registered DesignWare HDMI I2C bus driver
+[    1.540490] sunh5-dw-hdmi 1ee0000.hdmi: sunh5_hdmi_phy_setup_hpd: Enter
+[    1.547839] sunh5-drm display-engine: bound 1ee0000.hdmi (ops sunh5_dw_hdmi_ops)
+[    1.555243] [drm] Supports vblank timestamp caching Rev 2 (21.10.2013).
+[    1.561857] [drm] No driver support for vblank timestamp query.
+[    1.567786] sunh5-drm display-engine: sunh5_framebuffer_init: Enter
+[    1.574059] sunh5-drm display-engine: sunh5_vi_drm_atomic_helper_plane_reset: Enter
+[    1.581717] sunh5-drm display-engine: sunh5_ui_drm_atomic_helper_plane_reset: Enter
+[    1.589374] sunh5-drm display-engine: sunh5_ui_drm_atomic_helper_plane_reset: Enter
+[    1.597032] sunh5-drm display-engine: sunh5_ui_drm_atomic_helper_plane_reset: Enter
+[    1.604690] sunh5-drm display-engine: sunh5_crtc_atomic_helper_crtc_reset: Enter
+[    1.612423] [drm] Initialized sun4i-drm 1.0.0 20200502 for display-engine on minor 1
+[    1.620177] sunh5-drm display-engine: sunh5_drv_bind: drm_dev_register
+[    1.626730] sunh5-dw-hdmi 1ee0000.hdmi: sunh5_hdmi_phy_update_hpd: Enter
+[    1.633436] sunh5-dw-hdmi 1ee0000.hdmi: sunh5_hdmi_phy_read_hpd: Enter
+[    1.640046] [drm] Cannot find any crtc or sizes
+[    1.644591] sunh5-drm display-engine: sunh5_vi_drm_atomic_helper_plane_duplicate_state: Enter
+[    1.653121] sunh5-drm display-engine: sunh5_ui_drm_atomic_helper_plane_duplicate_state: Enter
+[    1.661647] sunh5-drm display-engine: sunh5_ui_drm_atomic_helper_plane_duplicate_state: Enter
+[    1.670171] sunh5-drm display-engine: sunh5_ui_drm_atomic_helper_plane_duplicate_state: Enter
+[    1.678697] sunh5-drm display-engine: sunh5_crtc_atomic_helper_crtc_duplicate_state: Enter
+[    1.686970] sunh5-drm display-engine: sunh5_de_atomic_check: Enter
+[    1.693161] sunh5-drm display-engine: sunh5_vi_layer_atomic_check: Enter
+[    1.699867] sunh5-drm display-engine: sunh5_crtc_atomic_check: Enter
+[    1.706224] sunh5-drm display-engine: sunh5_de_drm_atomic_helper_commit: Enter
+[    1.713455] sunh5-drm display-engine: sunh5_vi_drm_fb_cma_prepare_fb: Enter
+[    1.720419] sunh5-drm display-engine: sunh5_ui_drm_fb_cma_prepare_fb: Enter
+[    1.727382] sunh5-drm display-engine: sunh5_ui_drm_fb_cma_prepare_fb: Enter
+[    1.734344] sunh5-drm display-engine: sunh5_ui_drm_fb_cma_prepare_fb: Enter
+[    1.741311] sunh5-drm display-engine: sunh5_de_drm_atomic_helper_commit_tail_rpm: Enter
+[    1.749318] sunh5-drm display-engine: sunh5_crtc_atomic_helper_crtc_destroy_state: Enter
+[    1.757411] sunh5-drm display-engine: sunh5_vi_drm_atomic_helper_plane_destroy_state: Enter
+[    1.765762] sunh5-drm display-engine: sunh5_ui_drm_atomic_helper_plane_destroy_state: Enter
+[    1.774113] sunh5-drm display-engine: sunh5_ui_drm_atomic_helper_plane_destroy_state: Enter
+[    1.782463] sunh5-drm display-engine: sunh5_ui_drm_atomic_helper_plane_destroy_state: Enter
+[    1.790817] sunh5-drm display-engine: sunh5_drv_bind: Exit
+[    1.796534] cacheinfo: Unable to detect cache hierarchy for CPU 0
+[    1.810424] loop: module loaded
+[    1.818605] libphy: Fixed MDIO Bus: probed
+[    1.823038] tun: Universal TUN/TAP device driver, 1.6
+[    1.828982] thunder_xcv, ver 1.0
+[    1.832270] thunder_bgx, ver 1.0
+[    1.835541] nicpf, ver 1.0
+[    1.838925] hclge is initializing
+[    1.842237] hns3: Hisilicon Ethernet Network Driver for Hip08 Family - version
+[    1.849458] hns3: Copyright (c) 2017 Huawei Corporation.
+[    1.854826] e1000e: Intel(R) PRO/1000 Network Driver - 3.2.6-k
+[    1.860660] e1000e: Copyright(c) 1999 - 2015 Intel Corporation.
+[    1.866625] igb: Intel(R) Gigabit Ethernet Network Driver - version 5.6.0-k
+[    1.873586] igb: Copyright (c) 2007-2014 Intel Corporation.
+[    1.879199] igbvf: Intel(R) Gigabit Virtual Function Network Driver - version 2.4.0-k
+[    1.887027] igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
+[    1.893316] sky2: driver version 1.30
+[    1.897743] VFIO - User Level meta-driver version: 0.3
+[    1.904600] ehci_hcd: USB 2.0 'Enhanced' Host Controller (EHCI) Driver
+[    1.911163] ehci-pci: EHCI PCI platform driver
+[    1.915651] ehci-platform: EHCI generic platform driver
+[    1.921113] ehci-platform 1c1a000.usb: EHCI Host Controller
+[    1.926709] ehci-platform 1c1a000.usb: new USB bus registered, assigned bus number 1
+[    1.934900] ehci-platform 1c1a000.usb: irq 10, io mem 0x01c1a000
+[    1.954547] ehci-platform 1c1a000.usb: USB 2.0 started, EHCI 1.00
+[    1.961336] hub 1-0:1.0: USB hub found
+[    1.965122] hub 1-0:1.0: 1 port detected
+[    1.969681] ehci-orion: EHCI orion driver
+[    1.973895] ehci-exynos: EHCI EXYNOS driver
+[    1.978189] ohci_hcd: USB 1.1 'Open' Host Controller (OHCI) Driver
+[    1.984391] ohci-pci: OHCI PCI platform driver
+[    1.988908] ohci-platform: OHCI generic platform driver
+[    1.994315] ohci-platform 1c1a400.usb: Generic Platform OHCI controller
+[    2.000957] ohci-platform 1c1a400.usb: new USB bus registered, assigned bus number 2
+[    2.008939] ohci-platform 1c1a400.usb: irq 11, io mem 0x01c1a400
+[    2.079204] hub 2-0:1.0: USB hub found
+[    2.082991] hub 2-0:1.0: 1 port detected
+[    2.087517] ohci-exynos: OHCI EXYNOS driver
+[    2.092447] usbcore: registered new interface driver usb-storage
+[    2.100165] udc-core: couldn't find an available UDC - added [g_ether] to list of pending drivers
+[    2.110665] sun6i-rtc 1f00000.rtc: registered as rtc0
+[    2.115733] sun6i-rtc 1f00000.rtc: RTC enabled
+[    2.120477] i2c /dev entries driver
+[    2.130011] sdhci: Secure Digital Host Controller Interface driver
+[    2.136203] sdhci: Copyright(c) Pierre Ossman
+[    2.141017] Synopsys Designware Multimedia Card Interface Driver
+[    2.148046] sun50i-h5-pinctrl 1c20800.pinctrl: 1c20800.pinctrl supply vcc-pf not found, using dummy regulator
+[    2.158886] sunxi-mmc 1c0f000.mmc: Got CD GPIO
+[    2.188824] sunxi-mmc 1c0f000.mmc: initialized, max. request size: 16384 KB, uses new timings mode
+[    2.198262] sdhci-pltfm: SDHCI platform and OF driver helper
+[    2.205437] sun8i-h3-r-pinctrl 1f02c00.pinctrl: 1f02c00.pinctrl supply vcc-pl not found, using dummy regulator
+[    2.216208] ledtrig-cpu: registered to indicate activity on CPUs
+[    2.223697] usbcore: registered new interface driver usbhid
+[    2.229353] usbhid: USB HID core driver
+[    2.234879] cedrus 1c0e000.video-codec: Device registered as /dev/video0
+[    2.254578] ac108-codec 0-003b: ac108_i2c_probe - initialization done
+[    2.262749] NET: Registered protocol family 17
+[    2.267440] 9pnet: Installing 9P2000 support
+[    2.271789] Key type dns_resolver registered
+[    2.277086] registered taskstats version 1
+[    2.281213] Loading compiled-in X.509 certificates
+[    2.294441] sun50i-h5-pinctrl 1c20800.pinctrl: 1c20800.pinctrl supply vcc-pd not found, using dummy regulator
+[    2.305578] sun50i-h5-pinctrl 1c20800.pinctrl: 1c20800.pinctrl supply vcc-pg not found, using dummy regulator
+[    2.315516] mmc0: host does not support reading read-only switch, assuming write-enable
+[    2.325695] ehci-platform 1c1d000.usb: EHCI Host Controller
+[    2.331495] mmc0: new high speed SDHC card at address aaaa
+[    2.337222] ehci-platform 1c1d000.usb: new USB bus registered, assigned bus number 3
+[    2.346019] mmcblk0: mmc0:aaaa SC16G 14.8 GiB 
+[    2.351570] ehci-platform 1c1d000.usb: irq 12, io mem 0x01c1d000
+[    2.357627]  mmcblk0: p1 p2
+[    2.374543] ehci-platform 1c1d000.usb: USB 2.0 started, EHCI 1.00
+[    2.381283] hub 3-0:1.0: USB hub found
+[    2.385072] hub 3-0:1.0: 1 port detected
+[    2.390908] ohci-platform 1c1d400.usb: Generic Platform OHCI controller
+[    2.397547] ohci-platform 1c1d400.usb: new USB bus registered, assigned bus number 4
+[    2.405651] ohci-platform 1c1d400.usb: irq 13, io mem 0x01c1d400
+[    2.475180] hub 4-0:1.0: USB hub found
+[    2.478967] hub 4-0:1.0: 1 port detected
+[    2.484839] usb_phy_generic usb_phy_generic.2.auto: usb_phy_generic.2.auto supply vcc not found, using dummy regulator
+[    2.496253] musb-hdrc musb-hdrc.3.auto: MUSB HDRC host driver
+[    2.502016] musb-hdrc musb-hdrc.3.auto: new USB bus registered, assigned bus number 5
+[    2.510461] hub 5-0:1.0: USB hub found
+[    2.514252] hub 5-0:1.0: 1 port detected
+[    2.518685] using random self ethernet address
+[    2.523137] using random host ethernet address
+[    2.528010] usb0: HOST MAC 3a:2f:3f:b7:67:2a
+[    2.532311] usb0: MAC 12:c1:ff:31:00:44
+[    2.536178] using random self ethernet address
+[    2.540627] using random host ethernet address
+[    2.545126] g_ether gadget: Ethernet Gadget, version: Memorial Day 2008
+[    2.551744] g_ether gadget: g_ether ready
+[    2.557988] ac108-codec 0-003b: ac108_codec_probe - initialization done
+[    2.564729] ac108-codec 0-003b: ac108_set_sysclk: ID 0, freq 24000000
+[    2.571309] ac108-codec 0-003b: Setting sysclk src pll faill
+[    2.576990] ac108-codec 0-003b: simple-card: set_sysclk error
+[    2.582745] asoc-simple-card sound_ac108: ASoC: failed to init 1c22000.i2s-ac108-codec: -6
+[    2.591015] asoc-simple-card sound_ac108: ASoC: failed to instantiate card -6
+[    2.598224] ac108-codec 0-003b: ac108_codec_remove - initialization done
+[    2.605438] sun6i-rtc 1f00000.rtc: setting system clock to 1970-01-01T00:00:07 UTC (7)
+[    2.613744] gmac-3v3: disabling
+[    2.616895] usb0-vbus: disabling
+[    2.620140] ALSA device list:
+[    2.623115]   No soundcards found.
+[    2.644265] EXT4-fs (mmcblk0p2): recovery complete
+[    2.649090] EXT4-fs (mmcblk0p2): mounted filesystem with ordered data mode. Opts: (null)
+[    2.657243] VFS: Mounted root (ext4 filesystem) on device 179:2.
+[    2.674005] devtmpfs: mounted
+[    2.677882] Freeing unused kernel memory: 1472K
+[    2.682486] Run /sbin/init as init process
+[    2.732633] random: fast init done
+[    2.958917] systemd[1]: System time before build time, advancing clock.
+[    3.002844] random: systemd: uninitialized urandom read (16 bytes read)
+[    3.011601] random: systemd: uninitialized urandom read (16 bytes read)
+[    3.021418] systemd[1]: systemd 229 running in system mode. (+PAM +AUDIT +SELINUX +IMA +APPARMOR +SMACK +SYSVINIT +UTMP +LIBCRYPTSETUP +GCRYPT +GNUTLS +ACL +XZ -LZ4 +SECCOMP +BLKID +ELFUTILS +KMOD -IDN)
+[    3.039882] systemd[1]: Detected architecture arm64.
+
+Welcome to Ubuntu 16.04 LTS!
+
+[    3.066247] systemd[1]: Set hostname to <localhost.localdomain>.
+[    3.090780] random: systemd: uninitialized urandom read (16 bytes read)
+[    3.350008] systemd[1]: getty-static.service: Service lacks both ExecStart= and ExecStop= setting. Refusing.
+[    3.374745] systemd[1]: getty-static.service: Cannot add dependency job, ignoring: Unit getty-static.service is not loaded properly: Invalid argument.
+[    3.391044] systemd[1]: Created slice User and Session Slice.
+[  OK  ] Created slice User and Session Slice.
+[    3.410866] systemd[1]: Listening on Journal Socket.
+[  OK  ] Listening on Journal Socket.
+[    3.426920] systemd[1]: Listening on Journal Audit Socket.
+[  OK  ] Listening on Journal Audit Socket.
+[    3.442633] systemd[1]: Reached target Encrypted Volumes.
+[  OK  ] Reached target Encrypted Volumes.
+[    3.459167] systemd[1]: Created slice System Slice.
+[  OK  ] Created slice System Slice.
+[  OK  ] Created slice system-serial\x2dgetty.slice.
+         Mounting Huge Pages File System...
+         Starting Load Kernel Modules...
+         Mounting Debug File System...
+[  OK  ] Reached target Slices.
+[  OK  ] Started Dispatch Password Requests to Console Directory Watch.
+         Starting Remount Root and Kernel File Systems...
+[  OK  ] Listening on Journal Socket (/dev/log).
+         Starting Create Static Device Nodes in /dev...
+         Starting Journal Service...
+[  OK  ] Reached target Swap.
+[  OK  ] Started Forward Password Requests to Wall Directory Watch.
+         Mounting POSIX Message Queue File System...
+[  OK  ] Listening on /dev/initctl Compatibility Named Pipe.
+[  OK  ] Reached target Remote File Systems (Pre).
+[  OK  ] Reached target Remote File Systems.
+[  OK  ] Created slice system-getty.slice.
+[  OK  ] Reached target Paths.
+[  OK  ] Mounted POSIX Message Queue File System.
+[  OK  ] Mounted Huge Pages File System.
+[  OK  ] Mounted Debug File System.
+[  OK  ] Started Journal Service.
+[  OK  ] Started Load Kernel Modules.
+[  OK  ] Started Remount Root and Kernel File Systems.
+[  OK  ] Started Create Static Device Nodes in /dev.
+         Starting Load/Save Random Seed...
+[  OK  ] Reached target Local File Systems (Pre).
+[  OK  ] Reached target Local File Systems.
+         Starting Enable support for additional executable binary formats...
+         Starting Apply Kernel Variables...
+         Mounting Configuration File System...
+         Starting Flush Journal to Persistent Storage...
+[  OK  ] Mounted Configuration File System.
+[  OK  ] Started Load/Save Random Seed.
+[  OK  ] Started Enable support for additional executable binary formats.
+[  OK  ] Started Apply Kernel Variables.
+         Starting Raise network interfaces...
+[  OK  ] Started Flush Journal to Persistent Storage.
+         Starting Create Volatile Files and Directories...
+[  OK  ] Started Create Volatile Files and Directories.
+         Starting Update UTMP about System Boot/Shutdown...
+         Starting Network Time Synchronization...
+[  OK  ] Started Update UTMP about System Boot/Shutdown.
+[  OK  ] Started Network Time Synchronization.
+[  OK  ] Reached target System Time Synchronized.
+[  OK  ] Reached target System Initialization.
+[  OK  ] Started Daily Cleanup of Temporary Directories.
+[  OK  ] Listening on D-Bus System Message Bus Socket.
+[  OK  ] Reached target Sockets.
+[  OK  ] Started Daily apt activities.
+[  OK  ] Reached target Timers.
+[  OK  ] Reached target Basic System.
+[  OK  ] Started D-Bus System Message Bus.
+         Starting LSB: "privilege escalation detection system"...
+         Starting LSB: Set the CPU Frequency Scaling governor to "ondemand"...
+         Starting Login Service...
+         Starting Permit User Sessions...
+[  OK  ] Started Regular background program processing daemon.
+[  OK  ] Started LSB: "privilege escalation detection system".
+[  OK  ] Started Permit User Sessions.
+[  OK  ] Started Raise network interfaces.
+[  OK  ] Started LSB: Set the CPU Frequency Scaling governor to "ondemand".
+[  OK  ] Reached target Network.
+[  OK  ] Reached target Network is Online.
+         Starting LSB: start Samba NetBIOS nameserver (nmbd)...
+         Starting LSB: start Samba daemons for the AD DC...
+         Starting /etc/rc.local Compatibility...
+         Starting OpenBSD Secure Shell server...
+[  OK  ] Started Login Service.
+[  OK  ] Started /etc/rc.local Compatibility.
+[  OK  ] Started Getty on ttyS0.
+[  OK  ] Started OpenBSD Secure Shell server.
+[  OK  ] Started LSB: start Samba daemons for the AD DC.
+[  OK  ] Started LSB: start Samba NetBIOS nameserver (nmbd).
+         Starting LSB: start Samba SMB/CIFS daemon (smbd)...
+[  OK  ] Started LSB: start Samba SMB/CIFS daemon (smbd)

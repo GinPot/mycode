@@ -1,8 +1,0 @@
-<QPG:Generation>
-   <QPG:Owner file="owner.qpg"/>
-   <QPG:Values>
-      <QPG:Files>
-         <QPG:Add file="nto/*/*/crontab" pinfo="$" permissions="u+s"/>
-      </QPG:Files>
-   </QPG:Values>
-</QPG:Generation>

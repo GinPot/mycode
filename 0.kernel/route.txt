@@ -1,0 +1,90 @@
+start_kernel()																			//第一个C函数
+	...								
+	setup_arch(&command_line);									
+		mdesc = setup_machine_fdt(__atags_pointer);										//首先匹配dts中的compatible属性来确定是否支持板子，返回为NULL时到下面用旧方法匹配机器ID
+		arm_memblock_init(mdesc);														//获取dts中memreserve、Reserved memory内存信息
+		unflatten_device_tree();														//将dtb转换成节点是device_node的树状图结构，以便后续方便操作
+		arm_dt_init_cpu_maps();															//cpu node的处理(不是所有device node都会挂入bus上的设备链表，比如cpus node，memory node，choose node等)
+		...										
+	...																					//大量初始化，如内存、栈、文件系统、调度器、中断、时钟等
+	early_irq_init()																	//初始化体系结构相关的irq，创建平台irq描述符，插入到基数树链表irq_desc_tree中管理
+	...
+	rest_init();																		//创建2号内核线程kthread，初始化device driver。拉起1号进程init等
+		pid = kernel_thread(kernel_init, NULL, CLONE_FS);								//由0号进程fork出1号进程，初始化驱动后，拉起第一个用户控件程序init，用户空间所有新进程都是1号进程的子孙
+			kernel_init_freeable();														//初始化各种设备驱动
+				wait_for_completion(&kthreadd_done);									//这里需要等待kthreadd初始化完成才可以继续干活，否则会报内核Oops(驱动需要fork内核线程)
+				...							
+				do_basic_setup();														//进入各种基础初始化
+					driver_init();														//\drivers\base\init.c
+						/* These are the core pieces linux设备模型的框架*/
+						devtmpfs_init();												//注册一个名为devtmpfs的文件系统dev_fs_type,驱动核心设备将在这里添加他们的设备节点
+						devices_init();													//创建devices相关的设备模型(目录)
+						buses_init();													//建立linux设备模型bus部分的顶级节点
+						classes_init();													//建立linux设备模型class部分的顶级容器节点
+						firmware_init();												//建立linux设备模型中firmware部分的顶级节点，包含有设备数的信息
+						hypervisor_init();												//建立hypervisor_kobj的顶级容器节点
+
+						/* These are also core pieces, but must come after the
+						 * core core pieces.以下是对上面的扩展
+						 */
+						platform_bus_init();											//初始化linux platform bus，虚拟总线，主要用来管理cpu的片上资源
+						cpu_dev_init();													//创建/sys/devices/system/cpu目录
+						memory_dev_init();												//创建/sys/devices/system/memory设备在sysfs的接口	
+						container_dev_init();											//创建/sys/devices/system/container设备在sysfs的接口
+						of_core_init();													//创建/sys/firmware/devicetree节点
+					
+					do_initcalls();														//执行设备驱动入口回调,通过调用1~7个等级的函数，按优先级初始化
+						1、
+						2、postcore_initcall()：bus_register()、class_register()子bus、class初始化(如spi bus、i2c bus)，在/sys/bus/、/sys/class/下生产相应的bus目录
+						3、device_add()根据dts节点，进行platform device的注册!!!!!!!!!!!(of_platform_default_populate_init)
+						4、
+						5、
+						6、module_init()驱动设备的注册,只注册有.compatible = "simple-bus"属性节点的子节点，子节点的子节点不会注册
+						7、
+		
+		
+		
+		
+		
+		
+		
+			...
+			if (!try_to_run_init_process("/sbin/init") ||								//依次找，然后执行init程序，进入用户态
+				!try_to_run_init_process("/etc/init") ||
+				!try_to_run_init_process("/bin/init") ||
+				!try_to_run_init_process("/bin/sh"))
+				return 0;
+			panic("No working init found.  Try passing init= option to kernel. "		//如上面路径都没有找到init程序就直接kernel panic了
+				  "See Linux Documentation/admin-guide/init.rst for guidance.");
+		...
+		pid = kernel_thread(kthreadd, NULL, CLONE_FS | CLONE_FILES);					//创建2号内核线程，后面内核空间所有的新线程都 由2号进程fork出来，内核的守护进程
+		complete(&kthreadd_done);														//等待看kthreadd初始化完成
+		cpu_startup_entry(CPUHP_ONLINE);												//0号进程最终成为idle运行，检测有任务就运行，没有任务进入休眠，每秒250个时钟中断检测是否有任务
+			...
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		

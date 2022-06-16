@@ -1,0 +1,16 @@
+%C virtio i2c device
+
+loc <addr>
+    Base address for device registers.
+
+intr <intr>
+    Signal <intr> for device interrupts.
+
+verbose <severity>
+    The severity of the log message, 0 - Error, 1 - Warning, 2 - Info, 3 - Debug
+
+name <i2c_name>
+    i2c physical device name under "/dev/"
+
+Examples: enable i2c6 virtualization
+    vdev vdev-virtio-i2c.so loc 0x1c150000 intr gic:100 verbose 3 device i2c6

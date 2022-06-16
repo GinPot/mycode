@@ -1,0 +1,1 @@
+cmd_/root/work/driver/99.driver_test/driver_test.ko := aarch64-linux-gnu-ld -r  -EL  -maarch64elf -T ../scripts/module-common.lds -T ../arch/arm64/kernel/module.lds  --build-id  -o /root/work/driver/99.driver_test/driver_test.ko /root/work/driver/99.driver_test/driver_test.o /root/work/driver/99.driver_test/driver_test.mod.o ;  true

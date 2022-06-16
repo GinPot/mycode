@@ -1,3 +1,0 @@
-ldd - print shared libraries required by program
-
-usage: ldd program ...

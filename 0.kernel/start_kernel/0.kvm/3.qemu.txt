@@ -1,0 +1,48 @@
+
+设备树创建：
+main()
+	void qemu_init(int argc, char **argv, char **envp)
+		machine_run_board_init()
+			machine_class->init(machine);	
+				virt_machine_class_init()
+					machvirt_init()
+						create_fdt()
+
+虚拟机、vcpu、mm等申请创建运行：qemu-5.2.0\accel\kvm\
+kvm-all.c
+kvm-cpus.c
+
+
+
+
+
+kvm_initkvm_init()
+
+	kvm_memory_listener_register(s, &s->memory_listener, &address_space_memory, 0)		//申请guest内存
+		kvm_region_add()
+			kvm_set_phys_mem()
+				kvm_set_user_memory_region()
+
+
+
+
+kvm_cpu_exec()
+	kvm_arch_put_registers()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

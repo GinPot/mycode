@@ -1,0 +1,1 @@
+cmd_/root/work/driver/2.spin_lock/spin_lock.ko := aarch64-linux-gnu-ld -r  -EL  -maarch64elf -T ../scripts/module-common.lds -T ../arch/arm64/kernel/module.lds  --build-id  -o /root/work/driver/2.spin_lock/spin_lock.ko /root/work/driver/2.spin_lock/spin_lock.o /root/work/driver/2.spin_lock/spin_lock.mod.o ;  true

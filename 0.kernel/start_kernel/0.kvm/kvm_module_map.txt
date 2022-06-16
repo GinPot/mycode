@@ -1,0 +1,122 @@
+
+手册：VMSAv8-64 translation table format descriptors
+
+typedef u64 pteval_t
+#define _AT(T,X)	((T)(X))  ==>  (u64 1)
+
+#define PTE_USER		(_AT(pteval_t, 1) << 6)	 ==>  (1 << 6)	/* AP[1] */												//EL0和EL1都有读写权限
+
+#define PTE_HYP			PTE_USER
+
+
+#define PTE_TYPE_PAGE		(_AT(pteval_t, 3) << 0)																		//内存类型device，还是normal
+#define PTE_SHARED			(_AT(pteval_t, 3) << 8)																		//共享内存
+#define PTE_AF				(_AT(pteval_t, 1) << 10)																	//访问标志
+#define PTE_NG				(_AT(pteval_t, 1) << 11)																	//MMU翻译非全局，和当前TTBR0_EL1、TTBR1_EL1有关
+
+#define _PROT_DEFAULT		(PTE_TYPE_PAGE | PTE_AF | PTE_SHARED)
+#define PTE_MAYBE_NG		(arm64_kernel_use_ng_mappings() ? PTE_NG : 0)
+#define PROT_DEFAULT		(_PROT_DEFAULT | PTE_MAYBE_NG)
+
+#define PTE_DBM				(_AT(pteval_t, 1) << 51)
+#define PTE_PXN				(_AT(pteval_t, 1) << 53)
+#define PTE_UXN				(_AT(pteval_t, 1) << 54)
+#define PTE_DIRTY			(_AT(pteval_t, 1) << 55)
+	
+#define PTE_WRITE			(PTE_DBM)
+
+#define MT_DEVICE_nGnRE		1
+#define PTE_ATTRINDX(t)		(_AT(pteval_t, (t)) << 2)
+
+#define PROT_DEVICE_nGnRE	(PROT_DEFAULT | PTE_PXN | PTE_UXN | PTE_DIRTY | PTE_WRITE | PTE_ATTRINDX(MT_DEVICE_nGnRE))
+
+#define PAGE_HYP_DEVICE		__pgprot(PROT_DEVICE_nGnRE | PTE_HYP)														//D:arch\arm64\include\asm\pgtable-prot.h,设置页表属性
+
+
+=======================================================================================================================================
+
+CONFIG_ARM64_VA_BITS=48
+#define VA_BITS			(CONFIG_ARM64_VA_BITS)
+
+CONFIG_ARM64_PAGE_SHIFT=12
+#define PAGE_SHIFT		CONFIG_ARM64_PAGE_SHIFT	
+#define PAGE_SIZE		(_AC(1, UL) << PAGE_SHIFT)	==>  (1UL << PAGE_SHIFT)(0x1000)
+#define PAGE_MASK		(~(PAGE_SIZE-1))
+#define offset_in_page(p)	((unsigned long)(p) & ~PAGE_MASK)															//取p地址低12bit数据
+
+
+=======================================================================================================================================
+
+
+#define PHYS_PFN(x)	((unsigned long)((x) >> PAGE_SHIFT))
+#define	__phys_to_pfn(paddr)	PHYS_PFN(paddr)																			//paddr >> 12
+
+
+=======================================================================================================================================
+
+
+
+#define kern_hyp_va(v) 	((typeof(v))(__kern_hyp_va((unsigned long)(v))))
+
+#define PAGE_OFFSET		(UL(0xffffffffffffffff) - (UL(1) << (VA_BITS - 1)) + 1)   ==>   (UL(0xffffffffffffffff) - (UL(1) << (48 - 1)) + 1) = 0xffffffffffffffff - (1 << 47) + 1 = 0xFFFF800000000000
+
+kern_hyp_va(PAGE_OFFSET)
+
+
+=======================================================================================================================================
+
+#define __phys_to_pgd_val(phys)	__phys_to_pte_val(phys)
+#define kvm_mk_pgd(pudp)	__pgd(__phys_to_pgd_val(__pa(pudp)) | PUD_TYPE_TABLE)									//取pudp对应的物理地址
+
+
+=======================================================================================================================================
+
+
+
+#define __virt_to_pgoff(kaddr)	(((u64)(kaddr) & ~PAGE_OFFSET) / PAGE_SIZE * sizeof(struct page))					//把kaddr虚拟地址的高17bit清零，然后除以4k，乘以sizeof(struct page)
+#define virt_to_page(vaddr)	((struct page *)((__virt_to_pgoff(vaddr)) | VMEMMAP_START))								//[12:47]的大小乘以page结构体大小 | 0xffff7e0000000000
+
+
+get_page(virt_to_page(pgd))		
+
+																					//
+=======================================================================================================================================
+
+
+
+#define PGDIR_SIZE		(_AC(1, UL) << PGDIR_SHIFT)   ===> (1UL << 39)
+
+#define PGDIR_MASK		(~(PGDIR_SIZE-1))
+
+#define pgd_addr_end(addr, end)						\
+({	unsigned long __boundary = ((addr) + PGDIR_SIZE) & PGDIR_MASK;	\
+	(__boundary - 1 < (end) - 1)? __boundary: (end);		\
+})
+
+
+
+next = pgd_addr_end(addr, end)
+
+
+																					//
+=======================================================================================================================================
+
+
+
+
+
+
+
+
+for_each_possible_cpu(cpu)
+	for_each_cpu((cpu), cpu_possible_mask)
+			for ((cpu) = -1; (cpu) = cpumask_next((cpu), (mask)), (cpu) < nr_cpu_ids;)
+
+
+
+
+
+
+
+
+

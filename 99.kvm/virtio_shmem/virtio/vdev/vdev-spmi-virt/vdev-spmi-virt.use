@@ -1,0 +1,18 @@
+%C Virtual device to trap and emulate guest request to read / write SPMI commands 
+
+Syntax: Put the following in config file:
+vdev vdev-spmi-virt.so spmi_virt_base <SPMI_VIRT__ADDR>
+
+
+Options (to override autodetected defaults):
+
+ 	"spmi_virt_base",		/* Base address for vdev spmi - default 0x4400000 */
+	"spmi_virt_pic_base", 	/* Base address for interrupt registers for peripherals - default 0x5800000 */
+	"spmi_virt_gic", 		/* GIC number for summary SPMI interrupt - default 358 */
+	"spmi_virt_core_base",     /* Base address for core registers - default 0x400F000 */
+	"verbose",				/* 0 - Error, 1 - Warning, 2 - Info, 3 - Debug1, 4 - Debug2 - default Error */
+  
+Examples:
+  # For LINUX Guest on 8996 HMSS
+	vdev vdev-spmi-virt.so spmi_virt_base 0x4400000 spmi_virt_pic_base 0x5800000 spmi_virt_core_base 0x400F000 spmi_virt_gic 358 verbose 0
+	                                     

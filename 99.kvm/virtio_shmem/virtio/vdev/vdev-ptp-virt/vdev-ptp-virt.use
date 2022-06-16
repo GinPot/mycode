@@ -1,0 +1,15 @@
+%C Virtual device to trap and emulate guest request to read ptp timestamp 
+
+Syntax: Put the following in config file:
+vdev vdev-ptp-virt.so ptp_virt_base <PTP_VIRT__ADDR>
+
+
+Options (to override autodetected defaults):
+
+ 	"ptp_virt_base",	/* Base address for vdev ptp */
+	"verbose",			/* 0 - Error, 1 - Warning, 2 - Info, 3 - Debug1, 4 - Debug2 */
+	"ifname",			/* Ethernet interface name */
+  
+Examples:
+  # For LINUX Guest on 8996 HMSS
+	vdev vdev-ptp-virt.so ptp_virt_base 0x1D000000 verbose 3 ifname eth0

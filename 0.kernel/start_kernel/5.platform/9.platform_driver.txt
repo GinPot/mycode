@@ -1,0 +1,123 @@
+1、内核启动、ko的驱动加载都是串行加载；
+2、异步加载驱动可以并行加载(有些版本可能有bus的lock原因同个bus也只能串行)；
+
+
+
+
+i2c bus驱动(adapter)：
+1、需要在i2c_init()初始化完成后才能加载；
+2、需要有adap->name;
+3、需要有adap->algo传输函数；
+
+
+
+
+
+
+static struct platform_driver mv64xxx_i2c_driver = {
+	.probe	= mv64xxx_i2c_probe,
+	.remove	= mv64xxx_i2c_remove,
+	.driver	= {
+		.name	= MV64XXX_I2C_CTLR_NAME,
+		.pm     = mv64xxx_i2c_pm_ops,
+		.of_match_table = mv64xxx_i2c_of_match_table,
+//		.probe_type = PROBE_PREFER_ASYNCHRONOUS				//设置该驱动可以异步加载
+	},
+};
+module_platform_driver(mv64xxx_i2c_driver)					//i2c总线驱动
+
+#define module_platform_driver(__platform_driver) \
+	module_driver(__platform_driver, platform_driver_register, \
+			platform_driver_unregister)
+
+		#define module_driver(__driver, __register, __unregister, ...) \
+		static int __init mv64xxx_i2c_driver_init(void) \
+		{ \
+			return platform_driver_register(&(mv64xxx_i2c_driver) , ##__VA_ARGS__); \
+		} \
+		module_init(mv64xxx_i2c_driver_init); \
+		static void __exit (mv64xxx_i2c_driver_exit(void) \
+		{ \
+			platform_driver_unregister(&(mv64xxx_i2c_driver) , ##__VA_ARGS__); \
+		} \
+		module_exit(mv64xxx_i2c_driver_init);
+
+			#define module_init(x)	__initcall(x)
+				#define __initcall(fn) device_initcall(fn)
+					#define device_initcall(fn)		__define_initcall(fn, 6)
+
+
+#define platform_driver_register(drv) \
+	__platform_driver_register(drv, THIS_MODULE)
+		drv->driver.owner = owner;															//设置device_driver的bus、probe函数等
+		drv->driver.bus = &platform_bus_type;
+		drv->driver.probe = platform_drv_probe;
+		drv->driver.remove = platform_drv_remove;
+		drv->driver.shutdown = platform_drv_shutdown;
+		driver_register(&drv->driver)
+			...
+			driver_find(drv->name, drv->bus)												//判断该驱动在bus中是否已经注册，是否已经在bus->p->drivers_kset链表中
+			bus_add_driver(drv)
+				...
+				kobject_init_and_add(&priv->kobj, &driver_ktype, NULL, "%s", drv->name)		//在/sys/bus/platform/drivers/下面创建platform_driver.device_driver.name(platform_driver)名字的目录
+				klist_add_tail(&priv->knode_bus, &bus->p->klist_drivers)					//把该驱动添加到bus->p->drivers_kset链表中
+				if (drv->bus->p->drivers_autoprobe)
+					driver_attach(drv)
+						bus_for_each_dev(drv->bus, NULL, drv, __driver_attach)				//在bus->p->klist_devices链表中循环取出device去看是否匹配该驱动
+							__driver_attach()
+								driver_match_device(drv, dev)								//匹配方式和device一样
+								if (driver_allows_async_probing(drv))
+									...														//检测是否需要异步probe
+								device_driver_attach(drv, dev)
+									driver_probe_device(drv, dev)
+										really_probe(dev, drv)								//同6.kobject.txt分析
+
+
+mv64xxx_i2c_probe()
+	platform_get_resource(pd, IORESOURCE_MEM, 0)											//获取dtb节点寄存器信息
+	platform_get_irq(pd, 0)																	//获取dtb节点中断信息
+
+	drv_data->adapter.dev.parent = &pd->dev;
+	drv_data->adapter.algo = &mv64xxx_i2c_algo;
+	drv_data->adapter.owner = THIS_MODULE;
+	drv_data->adapter.class = I2C_CLASS_DEPRECATED;
+	drv_data->adapter.nr = pd->id;
+	drv_data->adapter.dev.of_node = pd->dev.of_node;										//初始化adapter结构体
+	
+	mv64xxx_i2c_hw_init(drv_data)															//初始化i2c控制器
+	request_irq(drv_data->irq, mv64xxx_i2c_intr, 0, MV64XXX_I2C_CTLR_NAME, drv_data)		//注册中断
+	
+	i2c_add_numbered_adapter(&drv_data->adapter)											//注册adapter 888
+		if (adap->nr == -1) /* -1 means dynamically assign bus id */
+			i2c_add_adapter(adap)
+				if (dev->of_node)
+					id = of_alias_get_id(dev->of_node, "i2c");								//通过别名，匹配dtb节点获取bus id, 若获取不到，也可通过动态申请bus id
+						__i2c_add_numbered_adapter(adapter)
+							idr_alloc(&i2c_adapter_idr, adap, adap->nr, adap->nr + 1, GFP_KERNEL)		//申请这个bus id
+							i2c_register_adapter(adap)
+								if (WARN_ON(!is_registered))											//在i2c_init()初始化完成后才能继续
+								if (WARN(!adap->name[0], "i2c adapter has no name"))					//需要有adap->name
+								if (!adap->algo)
+								...
+								device_register(&adap->dev)												//注册adapter的dev
+								...
+								class_compat_create_link(i2c_adapter_compat_class, &adap->dev, adap->dev.parent)	//在/sys/class/i2c-adapter/下面创建软连接i2c-x指向/sys/devices/platform/soc/1c2ac00.i2c/i2c-x
+								if (device_link)
+									error = sysfs_create_link(&dev->kobj, &device_link->kobj, "device")				///sys/devices/platform/soc/1c2ac00.i2c/i2c-0/有父类的话，在当前目录下创建软连接device指向/sys/devices/platform/soc/1c2ac00.i2c
+								未完待续！！！
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+

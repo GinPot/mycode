@@ -1,0 +1,119 @@
+1、单CPU情况：
+
+问题场景：
+	系统调用的控制路径		中断handler控制路径
+		读操作	 	
+								读操作
+								修改
+								写操作
+		修改	 	
+		写操作	 	
+
+
+	CPU正常执行时读写一个地址数据过程中，被打断进入中断处理handler，也读取同一个地址数据可能会存在问题；
+
+解决办法：
+	单cpu情况下，在不支持ldrex、strex原子操作指令之前，就直接禁用中断来完成原子操作；在支持原子操作指令的单核中，及以后的cpu都用指令来完成原子操作。
+	线程调度依赖于定时器中断，在单核情况下多线程调度产生的上述问题也是由中断导致。
+
+
+2、多核CPU情况：
+
+问题场景：
+	CPU1上的操作				CPU2上的操作
+	读操作	 
+							读操作
+							修改
+	修改
+	写操作	 
+							写操作
+
+	CPU和memory通过总线互联，任意时刻总线上只能有一个master设备，多CPU读memory操作会被串行化执行；cpu1在读写一个地址时，cpu2也在读这个地址可能会存在问题；
+
+解决办法：
+	ldrex、strex原子操作指令
+
+
+3、单独读不存在这个问题，只是读写时存在。
+
+4、在armv8之前，LL/SC(Load-Link/Store-Conditional)：如armv7用ldrex/strex指令，在ldr和str指令基础上加个ex(exclusive独占)： 当用ldrex指令从内存某个地址取出数据放到寄存器后，一个硬件的local/global monitor会将此地址标记为exclusive；
+	如cpua先进行load操作，标记变量v所在的内存地址为exclusive，在cpua进行store之前，cpub也进行了变量v的load操作，那内存地址的exclusive就变成cpub的标记(实际允许前者访问被后者打断并无效)，
+	之后cpua使用strex进行store操作时检测到目标地址exclusive不是自己标记的，那store失败；当cpub也执行strex时，检测到exclusive是自己标记的，那么store成功，exclusive标记也同步失效；cpua store
+	失败后会重新ldrex、strex操作，知道store成功。
+
+	对于Non-shareable memory，只会被一个cpu访问，只需要local monitor；
+	对于shareable memory，被多个cpu访问时，需要local monitor和global monitor共同工作，完成exclusive access。
+
+4.1、armv8.0主要把命令换了个名字：ldxr、stxr，其他和armv7一样，代码路径：arch\arm64\include\asm\atomic_ll_sc.h
+
+4.2、2014年的armv8.1开始，arm退出了原子操作的lse(Large System Extension)指令集扩展，只要一条指令ldadd(stadd)即实现load和store两个操作，代码路径：arch\arm64\include\asm\atomic_lse.h
+		STADD <Xs>, [<Xn|SP>]
+		等同于
+		LDADD <Xs>, XZR, [<Xn|SP>]
+
+===============================================================================================================================================================
+
+typedef struct {															//include\linux\types.h
+	int counter;
+} atomic_t;
+
+===============================================================================================================================================================
+
+#if defined(CONFIG_ARM64_LSE_ATOMICS) && defined(CONFIG_AS_LSE)				//根据芯片指定用的指令
+#include <asm/atomic_lse.h>
+#else
+#include <asm/atomic_ll_sc.h>												//H5用的是这个
+#endif
+
+
+
+#define ATOMIC_OP(op, asm_op)						\
+__LL_SC_INLINE void							\
+__LL_SC_PREFIX(arch_atomic_##op(int i, atomic_t *v))			\
+{									\
+	unsigned long tmp;						\
+	int result;							\
+									\
+	asm volatile("// atomic_" #op "\n"				\
+"	prfm	pstl1strm, %2\n"					\							//预取指令，用于store命令(pst)，从L1 cache预取(l1),数据流式处理或非临时处理，用于仅适用一次的数据(strm)
+"1:	ldxr	%w0, %2\n"						\								//定义跳转标签1，加载32位数据%2(v->counter)到寄存器%w0(result)
+"	" #asm_op "	%w0, %w0, %w3\n"				\							//将寄存器%w0(result)上的值加上%w3(i)赋值给%w0(result)
+"	stxr	%w1, %w0, %2\n"						\							//将%w0(result)存储到%2(v->counter)，成功返回0,给%w1(tmp)，失败是1
+"	cbnz	%w1, 1b"						\								//比较%w1(tmp)，非0跳转到1b，b是before
+	: "=&r" (result), "=&r" (tmp), "+Q" (v->counter)		\
+	: "Ir" (i));							\
+}									\
+__LL_SC_EXPORT(arch_atomic_##op);
+
+#define ATOMIC_OPS(...)							\
+	ATOMIC_OP(__VA_ARGS__)						\
+	ATOMIC_OP_RETURN(        , dmb ish,  , l, "memory", __VA_ARGS__)\
+	ATOMIC_OP_RETURN(_relaxed,        ,  ,  ,         , __VA_ARGS__)\
+	ATOMIC_OP_RETURN(_acquire,        , a,  , "memory", __VA_ARGS__)\
+	ATOMIC_OP_RETURN(_release,        ,  , l, "memory", __VA_ARGS__)\
+	ATOMIC_FETCH_OP (        , dmb ish,  , l, "memory", __VA_ARGS__)\
+	ATOMIC_FETCH_OP (_relaxed,        ,  ,  ,         , __VA_ARGS__)\
+	ATOMIC_FETCH_OP (_acquire,        , a,  , "memory", __VA_ARGS__)\
+	ATOMIC_FETCH_OP (_release,        ,  , l, "memory", __VA_ARGS__)
+
+ATOMIC_OPS(add, add)
+ATOMIC_OPS(sub, sub)
+
+
+static inline void atomic_add(int i, atomic_t *v)							//include\asm-generic\atomic-instrumented.h
+{
+	kasan_check_write(v, sizeof(*v));										//一般没定义CONFIG_KASAN，此处为空
+	arch_atomic_add(i, v);
+}
+
+
+
+
+全志H5(ARMv8.0)芯片例子:
+
+	atomic_t at_tv;															//原子定义
+									
+	atomic_add(3, &at_tv);													//原子加2
+									
+	atomic_sub(2, &at_tv);													//原子减2
+

@@ -1,8 +1,0 @@
-Thermal use
-
-%C [options]
-
-e.g. thermal_test
-
-options:
--h					Prints this info

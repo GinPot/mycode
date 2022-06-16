@@ -1,0 +1,62 @@
+interrupts = <0x0 0x54 0x4>;	<中断类型(核独有中断(PPI)、共享外设中断(SPI)), 中断号(不包括前面的16或32个中断), 触发方式(上升沿、下降沿...)>
+
+
+
+
+
+
+
+
+
+start_kernel()
+	init_IRQ()
+		init_irq_stacks();
+		irqchip_init();
+			of_irq_init(__irqchip_of_table);
+				desc->irq_init_cb = match->data;
+				desc->irq_init_cb(desc->dev, desc->interrupt_parent);
+					gic_of_init()
+		
+		if (!handle_arch_irq)
+			panic("No interrupt controller found.");
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+=================================================================================
+#define _OF_DECLARE(table, name, compat, fn, fn_type)			\
+	static const struct of_device_id __of_table_##name		\
+		__used __section(__##table##_of_table)			\
+		 = { .compatible = compat,				\
+		     .data = (fn == (fn_type)NULL) ? fn : fn  }
+#define OF_DECLARE_2(table, name, compat, fn) _OF_DECLARE(table, name, compat, fn, of_init_fn_2)
+#define IRQCHIP_DECLARE(name, compat, fn) OF_DECLARE_2(irqchip, name, compat, fn)
+
+IRQCHIP_DECLARE(gic_400, "arm,gic-400", gic_of_init);
+
+
+
+
+
+
+
+
+

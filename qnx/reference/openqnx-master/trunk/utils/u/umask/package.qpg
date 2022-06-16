@@ -1,8 +1,0 @@
-<QPG:Generation>
-   <QPG:Owner file="owner.qpg"/>
-   <QPG:Values>
-      <QPG:Files>
-         <QPG:Add type="file" file="nto/*/*/umask" pinfo="umask.pinfo"/>
-      </QPG:Files>
-   </QPG:Values>
-</QPG:Generation>

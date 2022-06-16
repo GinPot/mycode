@@ -1,0 +1,17 @@
+%C Virtual device for glink_ssr
+
+Syntax: Put the following in config file:
+vdev vdev-glink-ssr.so base <GLINK_SSR_VIRT__ADDR>
+
+
+Options (to override autodetected defaults):
+
+ 	"base",	/* Base address for vdev */
+ 	"wlan_ssr",			/* 0 - disable wlan ssr, 1 - enable wlan ssr */
+	"verbose",			/* 0 - Error, 1 - Warning, 2 - Info, 3 - Debug1, 4 - Debug2 */
+  
+Examples:
+  # For LINUX Guest on 8996 HMSS
+	vdev vdev-glink-ssr.so base 0x2D000000 
+	vdev vdev-glink-ssr.so base 0x2D000000 wlan_ssr 1
+	vdev vdev-glink-ssr.so base 0x2D000000 wlan_ssr 1 verbosity 2

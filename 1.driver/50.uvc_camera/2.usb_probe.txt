@@ -1,0 +1,114 @@
+struct v4l2_device; 用来描述一个v4l2设备实例
+struct v4l2_subdev, 用来描述一个v4l2的子设备实例
+struct video_device; 用来创建设备节点/dev/videoX
+struct v4l2_fh; 用来跟踪文件句柄实例
+
+
+设备实例(v4l2_device)
+
+           |______子设备实例(v4l2_subdev)
+
+           |______视频设备节点(video_device)
+
+           |______文件访问控制(v4l2_fh)
+
+           |______视频缓冲的处理(videobuf/videobuf2)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+配置描述符结构体：
+struct usb_host_config {
+	struct usb_config_descriptor	desc;						//配置描述符的存储结构体
+
+	char *string;		/* iConfiguration string, if present */
+
+	/* List of any Interface Association Descriptors in this
+	 * configuration. */
+	struct usb_interface_assoc_descriptor *intf_assoc[USB_MAXIADS];
+
+	/* the interfaces associated with this configuration,
+	 * stored in no particular order */
+	struct usb_interface *interface[USB_MAXINTERFACES];			//保存所有接口描述符数组
+
+	/* Interface information available even when this is not the
+	 * active configuration */
+	struct usb_interface_cache *intf_cache[USB_MAXINTERFACES];
+
+	unsigned char *extra;   /* Extra descriptors */
+	int extralen;
+};
+
+
+usb probe成功得到的接口描述符结构体：
+	struct usb_interface {
+		/* array of alternate settings for this interface,
+		 * stored in no particular order */
+		struct usb_host_interface *altsetting;										//根据num_altsetting的数量，保存对应的数组，接口描述信息(Interface Descriptor)
+
+		struct usb_host_interface *cur_altsetting;	/* the currently				//altsetting和cur_altsetting结构体中的extra数据一样
+						 * active alternate setting */
+		unsigned num_altsetting;	/* number of alternate settings */				//VideoControl或者VideoStreaming通道对应有多少个bAlternateSetting
+
+		/* If there is an interface association descriptor then it will list
+		 * the associated interfaces */
+		struct usb_interface_assoc_descriptor *intf_assoc;
+
+		int minor;			/* minor number this interface is
+						 * bound to */
+		enum usb_interface_condition condition;		/* state of binding */
+		unsigned sysfs_files_created:1;	/* the sysfs attributes exist */
+		unsigned ep_devs_created:1;	/* endpoint "devices" exist */
+		unsigned unregistering:1;	/* unregistration is in progress */
+		unsigned needs_remote_wakeup:1;	/* driver requires remote wakeup */
+		unsigned needs_altsetting0:1;	/* switch to altsetting 0 is pending */
+		unsigned needs_binding:1;	/* needs delayed unbind/rebind */
+		unsigned resetting_device:1;	/* true: bandwidth alloc after reset */
+		unsigned authorized:1;		/* used for interface authorization */
+
+		struct device dev;		/* interface specific device info */
+		struct device *usb_dev;
+		struct work_struct reset_ws;	/* for resets in atomic context */
+	};
+
+	
+	当前描述符保存的具体地方：
+		/* host-side wrapper for one interface setting's parsed descriptors */
+		struct usb_host_interface {
+			struct usb_interface_descriptor	desc;								//接口描述符本身的信息
+
+			int extralen;														//字符长度
+			unsigned char *extra;   /* Extra descriptors */						//对应的接口字符信息，接口描述符里具体的描述信息(除去接口描述符本身的描述和端点描述)
+
+			/* array of desc.bNumEndpoints endpoints associated with this
+			 * interface setting.  these will be in no particular order.
+			 */
+			struct usb_host_endpoint *endpoint;
+
+			char *string;		/* iInterface string, if present */
+		};
+			
+		struct usb_host_endpoint {
+			struct usb_endpoint_descriptor		desc;
+			struct usb_ss_ep_comp_descriptor	ss_ep_comp;
+			struct usb_ssp_isoc_ep_comp_descriptor	ssp_isoc_ep_comp;
+			struct list_head		urb_list;
+			void				*hcpriv;
+			struct ep_device		*ep_dev;	/* For sysfs info */
+
+			unsigned char *extra;   /* Extra descriptors */
+			int extralen;
+			int enabled;
+			int streams;
+		};

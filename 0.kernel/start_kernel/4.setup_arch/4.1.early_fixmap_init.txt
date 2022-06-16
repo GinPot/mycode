@@ -1,0 +1,379 @@
+
+内核虚拟地址：	0xffff000000000000 - 0xffffffffffffffff
+N/A			0x0000ffffffffffff - 0xffff000000000000
+用户虚拟地址：	0x0000000000000000 - 0x0000ffffffffffff
+
+
+<==================================================================================================================>
+
+内核虚拟地址空间细分：
+
+0xffffffffffffffff
+
+内核线性映射区
+
+0xffff800000000000							
+
+	0xffff7e0000000000 - 0xffff800000000000				VMEMMAP_START区域是稀疏内存的page结构体数组的虚拟地址空间
+	保留2M
+	0xffff7dfffee00000 - 0xffff7dffffe00000				PCI_IO_START向上16M为pcie IO地址空间
+	保留2M
+	0xffff7dfffe7f9000 - 0xffff7dfffec00000				FIXADDR_TOP fixmap固定模块区域，约4M
+	0xffff7dfffe635000 - 0xffff7dfffe7f9000				fixmap的FIX_PGD、PUD、PMD、PTE，动态申请释放区，不到2M
+
+
+	0xffff000010000000 - 0xffff0000117f5000				KIMAGE_VADDR内核镜像的起始虚拟地址，kernel text段
+	0xffff000008000000 - 0xffff000010000000				MODULES_VADDR
+
+0xffff000000000000		
+
+<==================================================================================================================>
+
+
+//内核虚拟地址的起始位置：
+#define VA_START				(UL(0xffffffffffffffff) - (UL(1) << VA_BITS) + 1)				0xffff000000000000
+//0xFFFF000000000000 - 0xFFFF800000000000之间用于内核线性映射区，大小128TB
+#define PAGE_OFFSET				(UL(0xffffffffffffffff) - (UL(1) << (VA_BITS - 1)) + 1)			0xffff800000000000
+
+
+#define BPF_JIT_REGION_START	(VA_START + KASAN_SHADOW_SIZE(0x0))								0xffff000000000000
+#define BPF_JIT_REGION_SIZE		(SZ_128M)														0x8000000
+#define BPF_JIT_REGION_END		(BPF_JIT_REGION_START + BPF_JIT_REGION_SIZE)					0xffff000008000000
+#define MODULES_VADDR			(BPF_JIT_REGION_END)											0xffff000008000000
+#define MODULES_VSIZE			(SZ_128M)														0x8000000
+#define MODULES_END				(MODULES_VADDR + MODULES_VSIZE)									0xffff000010000000
+#define KIMAGE_VADDR			(MODULES_END)													0xffff000010000000
+
+
+#define VMEMMAP_SIZE			(UL(1) << (VA_BITS - PAGE_SHIFT - 1 + STRUCT_PAGE_MAX_SHIFT))	0x20000000000
+#define VMEMMAP_START			(PAGE_OFFSET - VMEMMAP_SIZE)									0xffff7e0000000000
+#define PCI_IO_END				(VMEMMAP_START - SZ_2M)											0xffff7dffffe00000
+#define PCI_IO_START			(PCI_IO_END - PCI_IO_SIZE)										0xffff7dfffee00000
+#define FIXADDR_TOP				(PCI_IO_START - SZ_2M)											0xffff7dfffec00000
+
+
+=================================================================================================================================================
+
+0、unsigned long addr = FIXADDR_START
+[    0.000000] VA_BITS(30) , STRUCT_PAGE_MAX_SHIFT(6)
+[    0.000000] VMEMMAP_START(ffff7e0000000000) = PAGE_OFFSET(ffff800000000000) - VMEMMAP_SIZE(20000000000)
+[    0.000000] PCI_IO_END(ffff7dffffe00000) = VMEMMAP_START(ffff7e0000000000) - SZ_2M(200000)
+[    0.000000] PCI_IO_START(ffff7dfffee00000) = PCI_IO_END(ffff7dffffe00000) - PCI_IO_SIZE(1000000)
+[    0.000000] FIXADDR_TOP(ffff7dfffec00000) = PCI_IO_START(ffff7dfffee00000) - SZ_2M(200000)
+
+[    0.000000] FIXADDR_SIZE(407000) = __end_of_permanent_fixed_addresses(407) << PAGE_SHIFT(c)
+
+[    0.000000] FIXADDR_START(ffff7dfffe7f9000) = FIXADDR_TOP(ffff7dfffec00000) - FIXADDR_SIZE(407000)
+
+
+enum fixed_addresses {
+	FIX_HOLE,0
+
+	/*
+	 * Reserve a virtual window for the FDT that is 2 MB larger than the
+	 * maximum supported size, and put it at the top of the fixmap region.
+	 * The additional space ensures that any FDT that does not exceed
+	 * MAX_FDT_SIZE can be mapped regardless of whether it crosses any
+	 * 2 MB alignment boundaries.
+	 *
+	 * Keep this at the top so it remains 2 MB aligned.
+	 */
+
+#define FIX_FDT_SIZE		(MAX_FDT_SIZE + SZ_2M)
+
+	FIX_FDT_END,1
+	FIX_FDT = FIX_FDT_END + FIX_FDT_SIZE / PAGE_SIZE - 1,1024
+
+	FIX_EARLYCON_MEM_BASE,1025
+	FIX_TEXT_POKE0,1026
+
+
+	/* Used for GHES mapping from assorted contexts */
+	FIX_APEI_GHES_IRQ,1027
+	FIX_APEI_GHES_SEA,1028
+
+
+	FIX_ENTRY_TRAMP_DATA,1029
+	FIX_ENTRY_TRAMP_TEXT,1030
+	
+#define TRAMP_VALIAS		(__fix_to_virt(FIX_ENTRY_TRAMP_TEXT))
+
+	__end_of_permanent_fixed_addresses,								//上面是固定某些模块使用，下面是各模块动态申请释放
+
+	/*
+	 * Temporary boot-time mappings, used by early_ioremap(),
+	 * before ioremap() is functional.
+	 */
+#define NR_FIX_BTMAPS		(SZ_256K / PAGE_SIZE)
+#define FIX_BTMAPS_SLOTS	7
+#define TOTAL_FIX_BTMAPS	(NR_FIX_BTMAPS * FIX_BTMAPS_SLOTS)
+
+	FIX_BTMAP_END = __end_of_permanent_fixed_addresses,1031
+	FIX_BTMAP_BEGIN = FIX_BTMAP_END + TOTAL_FIX_BTMAPS - 1,1478
+
+	/*
+	 * Used for kernel page table creation, so unmapped memory may be used
+	 * for tables.
+	 */
+	FIX_PTE,1479
+	FIX_PMD,1480
+	FIX_PUD,1481
+	FIX_PGD,1482
+
+	__end_of_fixed_addresses，1483
+};
+
+FIX_HOLE					0xffff7dfffec00000
+FIX_FDT_END					0xffff7dfffebff000
+FIX_EARLYCON_MEM_BASE		0xffff7dfffe7ff000
+FIX_BTMAP_END				0xffff7dfffe7f9000
+FIX_BTMAP_BEGIN				0xffff7dfffe63a000
+FIX_PTE						0xffff7dfffe639000
+FIX_PGD)					0xffff7dfffe636000
+__end_of_fixed_addresses): 	0xffff7dfffe635000
+=================================================================================================================================================
+
+1、pgd_offset(&init_mm, addr)：
+
+CONFIG_ARM64_PAGE_SHIFT=12
+CONFIG_PGTABLE_LEVELS=4
+CONFIG_ARM64_VA_BITS=48
+
+#define PAGE_SHIFT		CONFIG_ARM64_PAGE_SHIFT											arch\arm64\include\asm\page-def.h
+#define ARM64_HW_PGTABLE_LEVEL_SHIFT(n)	((PAGE_SHIFT - 3) * (4 - (n)) + 3) = 39			arch\arm64\include\asm\pgtable-hwdef.h
+#define PGDIR_SHIFT		ARM64_HW_PGTABLE_LEVEL_SHIFT(4 - CONFIG_PGTABLE_LEVELS)			arch\arm64\include\asm\pgtable-hwdef.h
+
+#define VA_BITS			(CONFIG_ARM64_VA_BITS)
+#define MAX_USER_VA_BITS	VA_BITS
+#define PTRS_PER_PGD		(1 << (MAX_USER_VA_BITS - PGDIR_SHIFT))	= 1 << （48 - 39）	arch\arm64\include\asm\pgtable-hwdef.h
+
+#define pgd_index(addr)		(((addr) >> PGDIR_SHIFT) & (PTRS_PER_PGD - 1))				取出addr的bit[39:47]为的数据当做pgd entry
+
+#define pgd_offset_raw(pgd, addr)	((pgd) + pgd_index(addr))
+#define pgd_offset(mm, addr)	(pgd_offset_raw((mm)->pgd, (addr)))
+
+#define pgd_offset_k(addr)	pgd_offset(&init_mm, addr)		ffff0000117f2000 + ffff7dfffe7f9000(bit[39:47])		//init_mm.pgd保存这init_pg_dir(head.s配置的页表)虚拟地址,实际ffff0000117f2000 + bit[39:47]*8,(因为前面是64位地址加index)
+
+
+swapper_pg_dir = .;
+. += (1 << 12);
+swapper_pg_end = .;
+struct mm_struct init_mm = {
+	.mm_rb		= RB_ROOT,
+	.pgd		= swapper_pg_dir,
+	.mm_users	= ATOMIC_INIT(2),
+	.mm_count	= ATOMIC_INIT(1),
+	.mmap_sem	= __RWSEM_INITIALIZER(init_mm.mmap_sem),
+	.page_table_lock =  __SPIN_LOCK_UNLOCKED(init_mm.page_table_lock),
+	.arg_lock	=  __SPIN_LOCK_UNLOCKED(init_mm.arg_lock),
+	.mmlist		= LIST_HEAD_INIT(init_mm.mmlist),
+	.user_ns	= &init_user_ns,
+	.cpu_bitmap	= { [BITS_TO_LONGS(NR_CPUS)] = 0},
+	INIT_MM_CONTEXT(init_mm)
+};
+#define INIT_MM_CONTEXT(name)	\
+	.pgd = init_pg_dir,
+=================================================================================================================================================
+
+static __always_inline void __read_once_size(const volatile void *p, void *res, int size)
+{
+	switch (size) {
+	case 1: *(__u8_alias_t  *) res = *(volatile __u8_alias_t  *) p; break;
+	case 2: *(__u16_alias_t *) res = *(volatile __u16_alias_t *) p; break;
+	case 4: *(__u32_alias_t *) res = *(volatile __u32_alias_t *) p; break;
+	case 8: *(__u64_alias_t *) res = *(volatile __u64_alias_t *) p; break;
+	default:
+		barrier();
+		__builtin_memcpy((void *)res, (const void *)p, size);
+		barrier();
+	}
+}
+
+#define __READ_ONCE(x, check)						\
+({									\
+	union { typeof(x) __val; char __c[1]; } __u;			\
+	if (check)							\
+		__read_once_size(&(x), __u.__c, sizeof(x));		\
+	else								\
+		__read_once_size_nocheck(&(x), __u.__c, sizeof(x));	\
+	smp_read_barrier_depends(); /* Enforce dependency ordering from x */ \
+	__u.__val;							\
+})
+
+#define READ_ONCE(x) __READ_ONCE(x, 1)
+
+=================================================================================================================================================
+
+#define pgd_val(x)	((x).pgd)
+#define pgd_none(pgd)		(!pgd_val(pgd))
+
+=================================================================================================================================================
+
+#define __kimg_to_phys(addr)	((addr) - kimage_voffset)								//head.S保存了内核虚拟，物理地址的偏移
+#define __pa_symbol_nodebug(x)	__kimg_to_phys((phys_addr_t)(x))
+#define __phys_addr_symbol(x)	__pa_symbol_nodebug(x)									//arch\arm64\include\asm\memory.h
+#define __pa_symbol(x)		__phys_addr_symbol(RELOC_HIDE((unsigned long)(x), 0))		//得到x对应的物理地址，x为全局变量，在system.map有对应的虚拟地址，arch\arm64\include\asm\memory.h
+
+=================================================================================================================================================
+
+#define __phys_to_pte_val(phys)	(phys)
+#define __phys_to_pgd_val(phys)	__phys_to_pte_val(phys)
+
+
+typedef struct { pgdval_t pgd; } pgd_t;
+#define __pgd(x)	((pgd_t) { (x) } )
+
+
+static inline bool in_swapper_pgdir(void *addr)											//判断addr[63:12]位是不是和swapper_pg_dir[63:12]一样，这里是一样的，在swapper_pg_dir中
+{
+	return ((unsigned long)addr & PAGE_MASK) ==
+	        ((unsigned long)swapper_pg_dir & PAGE_MASK);
+}
+
+void __set_fixmap(enum fixed_addresses idx,
+			       phys_addr_t phys, pgprot_t flags)
+{
+	unsigned long addr = __fix_to_virt(idx);											//获取fixmap虚拟地址
+	pte_t *ptep;
+
+	BUG_ON(idx <= FIX_HOLE || idx >= __end_of_fixed_addresses);
+
+	ptep = fixmap_pte(addr);
+
+	if (pgprot_val(flags)) {
+		set_pte(ptep, pfn_pte(phys >> PAGE_SHIFT, flags));
+	} else {
+		pte_clear(&init_mm, addr, ptep);
+		flush_tlb_kernel_range(addr, addr+PAGE_SIZE);									//清除这段fixmap虚拟地址的的TLB
+	}
+}
+
+#define __fix_to_virt(x)	(FIXADDR_TOP - ((x) << PAGE_SHIFT))
+#define __set_fixmap_offset(idx, phys, flags)				\
+({									\
+	unsigned long ________addr;					\
+	__set_fixmap(idx, phys, flags);					\									//设置fixmap的pte
+	________addr = __fix_to_virt(idx) + ((phys) & (PAGE_SIZE - 1));	\					//（FIX_PGD的虚拟地址 + （swapper_pg_dir+FIXADDR_START[39:47])物理地址的低12bit）的虚拟地址保存bm_pud的物理地址
+	________addr;							\
+})
+#define set_fixmap_offset(idx, phys) __set_fixmap_offset(idx, phys, FIXMAP_PAGE_NORMAL)
+#define pgd_set_fixmap(addr)	((pgd_t *)set_fixmap_offset(FIX_PGD, addr))
+
+#define clear_fixmap(idx)	__set_fixmap(idx, 0, FIXMAP_PAGE_CLEAR)
+#define pgd_clear_fixmap()	clear_fixmap(FIX_PGD)
+
+void set_swapper_pgd(pgd_t *pgdp, pgd_t pgd)
+{
+	pgd_t *fixmap_pgdp;
+
+	spin_lock(&swapper_pgdir_lock);
+	fixmap_pgdp = pgd_set_fixmap(__pa_symbol(pgdp));
+	WRITE_ONCE(*fixmap_pgdp, pgd);
+	/*
+	 * We need dsb(ishst) here to ensure the page-table-walker sees
+	 * our new entry before set_p?d() returns. The fixmap's
+	 * flush_tlb_kernel_range() via clear_fixmap() does this for us.
+	 */
+	pgd_clear_fixmap();
+	spin_unlock(&swapper_pgdir_lock);
+}
+
+static inline void set_pgd(pgd_t *pgdp, pgd_t pgd)
+{
+	if (in_swapper_pgdir(pgdp)) {
+		set_swapper_pgd(pgdp, pgd);
+		return;
+	}
+
+	WRITE_ONCE(*pgdp, pgd);																	//fixmap中运行的是这~
+	dsb(ishst);
+}
+
+static inline void __pgd_populate(pgd_t *pgdp, phys_addr_t pudp, pgdval_t prot)
+{
+	set_pgd(pgdp, __pgd(__phys_to_pgd_val(pudp) | prot));
+}
+
+=================================================================================================================================================
+
+#define pgd_val(x)	((x).pgd)
+#define __pte(x)	((pte_t) { (x) } )
+static inline pte_t pgd_pte(pgd_t pgd)
+{
+	return __pte(pgd_val(pgd));
+}
+
+#define pte_val(x)	((x).pte)
+#define PTE_ADDR_LOW		(((_AT(pteval_t, 1) << (48 - PAGE_SHIFT)) - 1) << PAGE_SHIFT)	//((1 << (48 - 12)) - 1) << 12 = 0xFFFFFFFFF000(48bit, 低12bit为0)
+#define PTE_ADDR_MASK		PTE_ADDR_LOW
+#define __pte_to_phys(pte)	(pte_val(pte) & PTE_ADDR_MASK)									//读取pud的物理地址，保留bit[48:12]的数据，其余位清零
+#define __pgd_to_phys(pgd)	__pte_to_phys(pgd_pte(pgd))
+static inline phys_addr_t pgd_page_paddr(pgd_t pgd)
+{
+	return __pgd_to_phys(pgd);
+}
+
+#define PAGE_SHIFT 12
+#define ARM64_HW_PGTABLE_LEVEL_SHIFT(n)	((PAGE_SHIFT - 3) * (4 - (n)) + 3)					//((12 - 3) * (4 - 1) + 3)=30
+#define PUD_SHIFT		ARM64_HW_PGTABLE_LEVEL_SHIFT(1)
+
+#define PTRS_PER_PTE		(1 << (PAGE_SHIFT - 3))											//pud的长度
+#define PTRS_PER_PUD		 
+#define pud_index(addr)		(((addr) >> PUD_SHIFT) & (PTRS_PER_PUD - 1))					//取出addr(FIXADDR_START)中的bit[38:30]数据
+#define pud_offset_phys(dir, addr)	(pgd_page_paddr( (*(dir))) + pud_index(addr) * sizeof(pud_t))	//最终得到基于pud的物理地址加上entry偏移*8字节得到最终保留下一级查边pmd物理地址的物理地址
+
+#define __phys_to_kimg(x)	((unsigned long)((x) + kimage_voffset))							//返回pud+entry的虚拟地址
+#define pud_offset_kimg(dir,addr)	((pud_t *)__phys_to_kimg(pud_offset_phys((dir), (addr))))
+static inline pud_t * fixmap_pud(unsigned long addr)
+{
+	pgd_t *pgdp = pgd_offset_k(addr);
+	return pud_offset_kimg(pgdp, addr);
+}
+
+
+pgd + pud + pmd + pte + offset
+
+函数：
+early_fixmap_init							//arch\arm64\mm\mmu.c
+
+	unsigned long addr = FIXADDR_START;		//获取fixaddr内存的起始地址（虚拟地址），0xffff7dfffe7f9000
+	
+	pgdp = pgd_offset_k(addr);				//根据上面取到的虚拟地址对应bit[39:47]信息作为pgd的entry(offset)，pgd的基地址为连接脚本中定义的init_pg_dir，加上bit[39:47]的offset得到entry，虚拟地址
+	pgd = READ_ONCE(*pgdp);					//./include\linux\compiler.h，主要作用是volatile *pgdp里面的值取出
+
+	if (pgd_none(pgd))						//./arch/arm64/include/asm/pgtable.h，一般为空，下面准备填充
+		__pgd_populate(pgdp, __pa_symbol(bm_pud), PUD_TYPE_TABLE);			//设置pgd，先得到全局变量bm_pud对应的物理地址或上PUD_TYPE_TABLE(0x4777f003)，(init_pg_dir+FIXADDR_START[39:47])的虚拟地址保存bm_pud的物理地址
+	
+	pudp = fixmap_pud(addr);												//获取(pud+entry)对应的虚拟地址
+	if (pud_none(READ_ONCE(*pudp)))
+		__pud_populate(pudp, __pa_symbol(bm_pmd), PMD_TYPE_TABLE);			//将pmd的物理地址写到(pud+entry)对应的虚拟地址上
+
+	pmdp = fixmap_pmd(addr);												//获取(pmd+entry)对应的虚拟地址
+	__pmd_populate(pmdp, __pa_symbol(bm_pte), PMD_TYPE_TABLE);				//将pte的物理地址写到(pmd+entry)对应的虚拟地址上
+
+
+early_ioremap_init							//arch\arm64\mm\ioremap.c
+	early_ioremap_setup						//设置动态申请释放的fixmap
+		for (i = 0; i < FIX_BTMAPS_SLOTS; i++)
+			slot_virt[i] = __fix_to_virt(FIX_BTMAP_BEGIN - NR_FIX_BTMAPS*i)	//把动态申请的fixmap分为7块256k大小，把对应7块的虚拟地址保存到slot_virt全局变量中
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,8 +1,0 @@
-<?xml version="1.0"?>
-<module name="devb">
-  <classification>Driver</classification>
-  <requires>
-    <part build="false" location="lib/pccard"/>
-    <part build="false" location="lib/cache"/>
-  </requires>
-</module>

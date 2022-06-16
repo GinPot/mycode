@@ -1,7 +1,0 @@
-%C - QNX video capture driver for ADV748x decoders
-
-  Decoder       HDMI/MHL receiver & CP Core        Analog Inputs & SDP       number of CSI2 outputs
- ------------------------------------------------------------------------------------------------------
-  ADV7480             yes (HDMI & MHL)                   no                      1 (4 lanes)
-  ADV7481             yes (HDMI & MHL)                   yes                     2 (4 lanes, 1 lane)
-  ADV7482             yes (HDMI)                         yes                     2 (4 lanes, 1 lane)

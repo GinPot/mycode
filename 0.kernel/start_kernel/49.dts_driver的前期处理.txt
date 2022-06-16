@@ -1,0 +1,73 @@
+1、早期解析bootargs参数；驱动中添加对应参数检测，会在start_kernel很早阶段调用参数检测对应的处理函数
+
+start_kernel()
+	...
+	setup_arch(&command_line)
+	...
+	parse_early_param()
+		strlcpy(tmp_cmdline, boot_command_line, COMMAND_LINE_SIZE)
+		parse_early_options(tmp_cmdline)
+			parse_args("early options", cmdline, NULL, 0, 0, 0, NULL, do_early_param)	//循环取出启动参数中以空格分开的各个配置
+				do_early_param()														//每个配置调用该函数，去循环匹配.init.setup段中str
+					p->setup_func(val);													//匹配上就调用
+
+#define __setup(str, fn)						\										//放在.init.setup段中
+	__setup_param(str, fn, fn, 0)
+
+#define early_param(str, fn)						\
+	__setup_param(str, fn, fn, 1)
+
+*****************************************************
+
+__setup 宏的作用是根据传入的字符串参数，与bootloader传递的参数进行匹配，从而调用传入的函数，如：
+
+
+static int __init video_setup(char *options)
+{
+    printk("%s\n", options);
+    return 1;
+}
+__setup("video=", video_setup);
+
+
+假如bootloader传给kernel的参数是"video=xxxxx"，则会调用 video_setup 函数，printk 输出"xxxxx"
+
+
+1、__setup("driver_async_probe=", save_async_options);			//设置某些驱动可以异步probe，/* The option format is "driver_async_probe=drv_name1,drv_name2,..." */
+
+
+=======================================================================================================================================================================================================================================
+
+2、系统调式参数，内核代码判断该参数运行不同case
+
+bool initcall_debug;
+core_param(initcall_debug, initcall_debug, bool, 0644);			把initcall_debug类型的字符串保存在__param段中
+
+
+#define subsys_initcall(fn)		__define_initcall(fn, 4)						// 888
+subsys_initcall(param_sysfs_init)
+	module_kset = kset_create_and_add("module", &module_uevent_ops, NULL)		//创建/sys/module/目录
+		param_sysfs_builtin()
+			for (kp = __start___param; kp < __stop___param; kp++) {				//解析__param端
+				strcpy(modname, "kernel")										//创建/sys/module/kernel/目录
+				strlcpy(modname, kp->name, name_len)							//在/sys/module/kernel/parameters下创建core_param添加的参数
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,141 @@
+行为：
+	1、循环取根节点下的一级子节点创建device；
+	2、循环取一级子节点有 of_default_bus_match_table 属性的二级子节点创建device；
+	3、创建device的节点需要有compatible属性(chosen/memory/cpu等节点就不会创建device)；
+	4、创建device的节点没有status，或status为okay/ok；
+	5、soc下的二级子节点由对应的一级节点在加载驱动probe的时候device_add
+
+需求：
+	1、根节点(一般是)一定要用interrupt-parent属性保存中断节点的phandle
+
+
+不必要属性：
+	1、interrupt-names
+	2、reg-names
+
+sysfs:
+	1、部分一节子节点、soc下的二级子节点device_add时会在/sys/devices/platform/下创建对应的目录,目录下:
+		(1)创建of_node软连接，指向/sys/firmware/devicetree/base/下的目录；
+		(2)创建subsystem软连接，指向/sys/bus/platform/,表示其bus类型；
+		(3)在/sys/bus/xxx(bus name)/devices/下创建改device name的软连接，指向/sys/devices/platform/xxx的具体设备
+	2、在需要创建/dev/节点的device
+		(1)在对应的/sys/devices/platform/xx下面创建dev文件，保存主次设备号信息
+		(2)在/sys/dev/char/下创建改driver的主次设备号文件名的软连接，指向该设备/sys/devices/platform/xx
+
+
+
+
+
+
+
+const struct of_device_id of_default_bus_match_table[] = {							//一级子节点不包括下面属性的话，就只会根据节点本身创建device，不会对其二级节点创建device
+	{ .compatible = "simple-bus", },
+	{ .compatible = "simple-mfd", },
+	{ .compatible = "isa", },
+	{ .compatible = "arm,amba-bus", },
+	{} /* Empty terminated list */
+};
+
+================================================================================================================================================
+
+start_kernel()
+	arch_call_rest_init()
+		rest_init()
+			pid = kernel_thread(kernel_init, NULL, CLONE_FS)							//创建第一个线程，即为1号进程；初始化驱动后进入用户态； 2号进程作用为管理维护其他内核线程
+				kernel_init_freeable()
+					...
+					driver_init()
+					...
+					do_basic_setup()
+						do_initcall_level()
+							arch_initcall_sync(of_platform_default_populate_init)		//drivers\of\platform.c
+								of_platform_default_populate(NULL, NULL, NULL)
+
+
+
+
+#define arch_initcall_sync(fn)		__define_initcall(fn, 3s)
+arch_initcall_sync(of_platform_default_populate_init)		//drivers\of\platform.c
+	of_platform_default_populate(NULL, NULL, NULL)
+
+of_platform_populate(root, of_default_bus_match_table, lookup, parent)					//除第二个参数外其余都为NULL,普通soc下的节点没有lookup,如cpu节点才有bus_id 888
+	for_each_child_of_node(root, child)													//循环根节点下的一级子节点
+		of_platform_bus_create(child, matches, lookup, parent, true)
+			if (strict && (!of_get_property(bus, "compatible", NULL)))					//跳过没有compatible属性的一节子节点
+			if (unlikely(of_match_node(of_skipped_node_table, bus)))					//跳过属性时compatible = "operating-points-v2"的节点
+			if (of_node_check_flag(bus, OF_POPULATED_BUS))								//跳过已经处理过的节点
+			of_dev_lookup(lookup, bus)													//该节点在lookup表中是否有匹配的，有即返回对应的lookup数据
+			if (of_device_is_compatible(bus, "arm,primecell"))							//ARM Primecell Peripherals，有对应的节点则在amba总线上增加一个amba device
+
+
+
+			of_platform_device_create_pdata(bus, bus_id, platform_data, parent)			//根据该节点创建device
+				of_device_is_available(np)												//节点没有status，或者status为okay或ok都继续往下创建
+				dev = of_device_alloc(np, bus_id, parent)
+					dev = platform_device_alloc("", PLATFORM_DEVID_NONE)				//申请创建platform_device结构体，初始化改结构体的device成员的object
+					of_address_to_resource(np, num_reg, &temp_res)
+						addrp = of_get_address(dev, index, &size, &flags)
+							parent = of_get_parent(dev)									//这里取的parent一般为根节点或者带有 of_default_bus_match_table 属性的soc节点
+							...
+							bus->count_cells(dev, &na, &ns)								//获取soc或根节点对应的#size-cells、#address-cells属性值
+							prop = of_get_property(dev, bus->addresses, &psize)			//获取reg属性值地址、长度(个数*4字节)
+							...
+							for (i = 0; psize >= onesize; psize -= onesize, prop += onesize, i++)
+								if (i == index) 
+									*size = of_read_number(prop + na, ns);				//取reg的size大小
+									*flags = bus->get_flags(prop);						//去reg默认的flag(IORESOURCE_MEM)
+						of_property_read_string_index(dev, "reg-names",	index, &name)	//获取不必要的"reg-names"属性
+						__of_address_to_resource(dev, addrp, size, flags, name, r)
+							taddr = of_translate_address(dev, addrp)					//获取reg的地址值(dts中配置的物理地址), 在有ranges属性的节点中reg地址需要转换
+							...															//最好保存在resource结构体中
+					
+					num_irq = of_irq_count(np)											///以#interrupt-cells大小为一组，获取该节点中断组数
+						of_irq_parse_one(dev, nr, &irq)
+							addr = of_get_property(device, "reg", NULL)					//获取节点的reg值
+							...
+							p = of_irq_find_parent(device);								//不断获取节点的parent，直到该节点有interrupt-parent属性，然后通过interrupt-parent属性找到中断控制器节点
+							of_property_read_u32(p, "#interrupt-cells", &intsize)		//获取中断节点#interrupt-cells大小
+							for (i = 0; i < intsize; i++)
+								res = of_property_read_u32_index(device, "interrupts", (index * intsize) + i, out_irq->args + i)			//以#interrupt-cells大小为一组，取其值
+
+					of_irq_to_resource_table(np, res, num_irq)							//把硬件irq经过irq_domain转换成linux irq、触发类型、name(interrupt-names不必要)保存到resource结构体中
+					...
+					dev->resource = res;												//最后把reg和中断信息保存在dev->resource中
+					...
+					dev->dev.parent = parent ? : &platform_bus							//设置parent为platform_bus
+					of_device_make_bus_id(&dev->dev);									//一般soc下的一级子节点都在这设置dev->obj.name(一般情况是寄存器.节点名或者就是节点名1000000.clock/sound_ac108),同platform_device.name 888
+				dev->dev.bus = &platform_bus_type										//设置bus为platform_bus_type(后续device_add中会根据bus添加device的软连接subsystem, 和在)  888
+				of_device_add(dev)
+					ofdev->name = dev_name(&ofdev->dev)									//设置platform_device.name为dev->obj.name
+					ofdev->id = PLATFORM_DEVID_NONE										//设置platform_device.id为-1
+
+
+
+			for_each_child_of_node(bus, child)											//如果节点包含of_default_bus_match_table的属性，则继续循环该一级节点下的二级子节点
+				of_platform_bus_create(child, matches, lookup, &dev->dev, strict)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

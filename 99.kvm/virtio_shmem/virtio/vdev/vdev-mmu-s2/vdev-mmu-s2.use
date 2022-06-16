@@ -1,0 +1,5 @@
+%C Provides support to map/unmap from guest CPU's stage 2 MMU mappings.
+
+Put the following in config file:
+vdev vdev-mmu-s2.so name s2-mmu
+

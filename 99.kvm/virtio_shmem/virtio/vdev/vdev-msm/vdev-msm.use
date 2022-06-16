@@ -1,0 +1,23 @@
+%C Virtual device to trap and emulate guest watchdog
+
+Syntax: Put the following in config file:
+vdev vdev-msm.so name <VDEV_NAME> wdt_base <APCS_HMSS_WDT_ADDR> wdt_hz <CLOCK HZ> wdt_bark_irq <VECTOR_NUMBER> wdt_bite_irq <VECTOR_NUMBER> smc_trap <TRUE/FALSE> pcie <TRUE/FALSE> verbose <LOGGER_SEVERITY>
+
+
+Options (to override autodetected defaults):
+
+    "wdt_base",     /* Base address for this HMSS watchdog */
+    "wdt_hz",       /* defined the value of the clock HZ values */
+    "wdt_bark_irq", /* Bark IRQ vector number */
+    "wdt_bite_irq", /* Bite IRQ vector number */
+    "smc_trap",     /* Activate SMC trap */
+    "pcie",         /* Activate PCIe Power */
+    "trigger_hostramdump",	/* Trigger host ramdump after guest dump got collected */ 
+    "verbose",      /* 0 - Error, 1 - Warning, 2 - Info, 3 - Debug1, 4 - Debug2 */
+
+Examples:
+    # For QNX Guest on 8996 HMSS
+    vdev vdev-msm.so name vdev-msm wdt_base 0x09830000 wdt_hz 32765 wdt_bark_irq 60 wdt_bite_irq 61 smc_trap 0 pcie 0 trigger_hostramdump 1 verbose 1
+
+    # For LINUX Guest on 8996 HMSS
+    vdev vdev-msm.so name vdev-msm wdt_base 0x09830000 wdt_hz 32768 wdt_bark_irq 60 wdt_bite_irq 61 smc_trap 1 pcie 1 trigger_hostramdump 0 verbose 1

@@ -1,0 +1,33 @@
+#define VTCR_EL2_TGRAN_SL0_BASE		2UL
+#define VTCR_EL2_SL0_TO_LVLS(sl0)	((sl0) + 4 - VTCR_EL2_TGRAN_SL0_BASE)
+
+
+#define VTCR_EL2_SL0_SHIFT			6
+#define VTCR_EL2_SL0_MASK			(3 << VTCR_EL2_SL0_SHIFT)
+#define VTCR_EL2_LVLS(vtcr)			VTCR_EL2_SL0_TO_LVLS(((vtcr) & VTCR_EL2_SL0_MASK) >> VTCR_EL2_SL0_SHIFT)
+#define kvm_stage2_levels(kvm)		VTCR_EL2_LVLS(kvm->arch.vtcr)
+
+
+#define VTCR_EL2_T0SZ_MASK			0x3f
+#define VTCR_EL2_IPA(vtcr)			(64 - ((vtcr) & VTCR_EL2_T0SZ_MASK))
+#define kvm_phys_shift(kvm)			VTCR_EL2_IPA(kvm->arch.vtcr)
+
+
+
+#define stage2_pgd_size(kvm)		__s2_pgd_size(kvm_phys_shift(kvm), kvm_stage2_levels(kvm))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

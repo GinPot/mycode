@@ -1,6 +1,0 @@
-%C	- shared memory example program from a host system
-
-grabbuffer paddr len paddr len
-
-support two buffer
-Type "quit" to cause the program to cleanly terminate.

@@ -1,0 +1,28 @@
+
+setup_arch()
+	...
+	early_fixmap_init();					//初始化fixmap段内存的pgd、pud、pmd
+	early_ioremap_setup();					//设置动态申请释放的fixmap段
+	
+	setup_machine_fdt(__fdt_pointer);		//__fdt_pointer参数在head.s阶段保存的x0设备树地址，解析设备树的ramdisk、bootargs、address/size-cells、memory等信息，并把memory添加到memblock数组中
+	
+	parse_early_param();					//驱动中有定义early_param("xx",func)，且启动参数中有对应的xx字符，则会调用func函数
+	
+	local_daif_restore(DAIF_PROCCTX_NOIRQ);
+		write_sysreg(0x00000080, daif);		//使能fiq(但armv8中应该是无用)、SError、Watchpoint、Breakpoint、Software Step等异常
+
+	cpu_uninstall_idmap();					//idmap的页表基地址ttbr0_el1设置为empty_zero_page,无效所有的tlb，mmu的缓存
+
+	xen_early_init();						//未支持
+	
+	efi_init();								//一般嵌入式未使用
+	
+	arm64_memblock_init();
+
+
+
+
+
+
+
+
