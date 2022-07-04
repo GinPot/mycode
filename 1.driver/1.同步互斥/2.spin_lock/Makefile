@@ -7,4 +7,4 @@ obj-m 	+= $(SRC_O)
 all:
 	make -C $(KERNER_DIR) M=$(shell pwd) modules ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 clean:
-	rm -rf *.o *.ko *.order *.mod.c *.symvers
+	rm -rf *.o *.ko *.order *.mod.c *.symvers .*

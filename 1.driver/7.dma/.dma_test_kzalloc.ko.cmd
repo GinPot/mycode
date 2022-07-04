@@ -1,1 +1,0 @@
-cmd_/root/work/linux/driver/7.dma/dma_test_kzalloc.ko := aarch64-linux-gnu-ld -r  -EL  -maarch64elf -T ../scripts/module-common.lds -T ../arch/arm64/kernel/module.lds  --build-id  -o /root/work/linux/driver/7.dma/dma_test_kzalloc.ko /root/work/linux/driver/7.dma/dma_test_kzalloc.o /root/work/linux/driver/7.dma/dma_test_kzalloc.mod.o ;  true

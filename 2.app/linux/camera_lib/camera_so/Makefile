@@ -1,6 +1,6 @@
 CFLAGS := -Wall -O2 -g
 
-LDFLAGS := -fPIC -shared -lpthread
+LDFLAGS :=  -shared 
 
 export CFLAGS
 
@@ -10,7 +10,7 @@ TARGET := libcamer.so
 
 all : 
 
-	$(CC) $(LDFLAGS) CameraSo.c -o $(TARGET) -ljpeg
+	$(CC) $(LDFLAGS) CameraSo.c -o $(TARGET) 
 
 
 clean:

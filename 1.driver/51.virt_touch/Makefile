@@ -15,4 +15,4 @@ PWD:=$(shell pwd)
 all: 
 		make -C $(KERN_DIR) M=$(PWD) modules  
 clean: 
-		rm -rf *.o *.ko *.order *.mod.c *.symvers
+		rm -rf *.o *.ko *.order *.mod.c *.symvers .*

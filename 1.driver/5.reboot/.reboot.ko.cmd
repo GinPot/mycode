@@ -1,1 +1,0 @@
-cmd_/root/work/linux/driver/5.reboot/reboot.ko := aarch64-linux-gnu-ld -r  -EL  -maarch64elf -T ../scripts/module-common.lds -T ../arch/arm64/kernel/module.lds  --build-id  -o /root/work/linux/driver/5.reboot/reboot.ko /root/work/linux/driver/5.reboot/reboot.o /root/work/linux/driver/5.reboot/reboot.mod.o ;  true

@@ -8,4 +8,4 @@ obj-m 		:= mutex_lock_test.o
 all:
 	make -C $(KERNER_DIR) M=$(shell pwd) modules $(ENV)
 clean:
-	rm -rf *.o *.ko *.order *.mod.c *.symvers
+	rm -rf *.o *.ko *.order *.mod.c *.symvers .*

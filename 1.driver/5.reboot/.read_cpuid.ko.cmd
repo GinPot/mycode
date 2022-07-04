@@ -1,1 +1,0 @@
-cmd_/disk3/wuping/GinPot/tmp/driver/5.read_cpuid/read_cpuid.ko := aarch64-linux-gnu-ld -r  -EL  -maarch64elf -T ../scripts/module-common.lds -T ../arch/arm64/kernel/module.lds  --build-id  -o /disk3/wuping/GinPot/tmp/driver/5.read_cpuid/read_cpuid.ko /disk3/wuping/GinPot/tmp/driver/5.read_cpuid/read_cpuid.o /disk3/wuping/GinPot/tmp/driver/5.read_cpuid/read_cpuid.mod.o ;  true

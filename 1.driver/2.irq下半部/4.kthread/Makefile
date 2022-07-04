@@ -8,4 +8,4 @@ obj-m 	+= kthread.o
 all: 
 	make -C $(KERN_DIR) M=$(shell pwd) modules ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 clean: 
-	rm -rf *.o *.ko *.order *.mod.c *.symvers
+	rm -rf *.o *.ko *.order *.mod.c *.symvers .*

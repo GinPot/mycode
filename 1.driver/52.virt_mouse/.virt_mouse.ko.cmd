@@ -1,1 +1,0 @@
-cmd_/home/wuping/work/simple/driver/virt_mouse/virt_mouse.ko := aarch64-linux-gnu-ld -EL -r  -maarch64linux -T ./scripts/module-common.lds --build-id  -o /home/wuping/work/simple/driver/virt_mouse/virt_mouse.ko /home/wuping/work/simple/driver/virt_mouse/virt_mouse.o /home/wuping/work/simple/driver/virt_mouse/virt_mouse.mod.o ;  true

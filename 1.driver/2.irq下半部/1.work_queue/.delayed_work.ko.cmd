@@ -1,1 +1,0 @@
-cmd_/root/work/driver/6.delayed_work/delayed_work.ko := aarch64-linux-gnu-ld -r  -EL  -maarch64elf -T ../scripts/module-common.lds -T ../arch/arm64/kernel/module.lds  --build-id  -o /root/work/driver/6.delayed_work/delayed_work.ko /root/work/driver/6.delayed_work/delayed_work.o /root/work/driver/6.delayed_work/delayed_work.mod.o ;  true

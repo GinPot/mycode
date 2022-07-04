@@ -1,1 +1,0 @@
-cmd_/root/work/linux/driver/50.uvc_camera/camerauvc-objs := aarch64-linux-gnu-ld  -EL  -maarch64elf    -r -o /root/work/linux/driver/50.uvc_camera/camerauvc-objs /root/work/linux/driver/50.uvc_camera/uvc_camera.o /root/work/linux/driver/50.uvc_camera/uvc_debugfs.o 
