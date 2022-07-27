@@ -5,4 +5,6 @@
 5、smp cpu；
 50、kasan
 
-
+60、clk/rtc
+61、regulatr
+62、pinctol

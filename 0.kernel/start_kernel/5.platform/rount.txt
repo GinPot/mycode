@@ -1,7 +1,7 @@
 
 0.start_kernel()
 	setup_arch()
-1.		unflatten_device_tree()																//设备树展开
+1.		unflatten_device_tree()																//设备树展开，保存节点信息好设备树结构体中
 
 	vfs_caches_init()
 		mnt_init()
@@ -14,6 +14,7 @@
 				kernel_init_freeable()
 					...
 					driver_init()															//驱动模型的初始化：bus、class、platform的初始化
+						devtmpfs_init();													//觉得创建/dev/节点的方式
 4.						devices_init();														//sys/下一级目录初始化; platform虚拟总线初始化、devices_add()
 
 				do_basic_setup()
@@ -21,7 +22,7 @@
 
 5.						postcore_initcall(i2c_init)								__define_initcall(fn, 2)		//i2c总线初始化
 
-6.						arch_initcall_sync(of_platform_default_populate_init)	__define_initcall(fn, 3s)		//设备树展开后注册platform_device
+6.						arch_initcall_sync(of_platform_default_populate_init)	__define_initcall(fn, 3s)		//设备树展开后个节点注册platform_device
 
 7.						module_init(x)											__define_initcall(fn, 6)		//普通驱动注册
 

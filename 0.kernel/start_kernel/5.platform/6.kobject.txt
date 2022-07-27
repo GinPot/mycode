@@ -1,12 +1,40 @@
 1、创建虚拟文件系统分区，可挂载，占用ddr空间；
+
 2、平台设备probe方案：
-	2.1、若平台设备设置driver_override，则其与平台驱动name匹配；
-	2.2、平台驱动name与设备树的compatible匹配；
+	2.1、若platform device通过设置/sys/devices/platform/soc/xxx/driver_override(其他platform device设备路径可能不一样)节点name ，则其与平台驱动name匹配；
+			static const struct of_device_id mv64xxx_i2c_of_match_table[] = {
+				{ .compatible = "allwinner,sun4i-a10-i2c", .data = &mv64xxx_i2c_regs_sun4i},
+				{}
+			};
+			static const struct i2c_device_id mv64xxx_id[] = {
+				{ "1c2ac00.i2c", 0 },
+				{ }
+			};
+			static struct platform_driver mv64xxx_i2c_driver = {
+				.probe	= mv64xxx_i2c_probe,
+				.remove	= mv64xxx_i2c_remove,
+				.id_table = mv64xxx_id,									//2.4 用id_table的name和 platform_device.name匹配
+				.driver	= {
+					.name	= "mv64xxx_i2c",							//2.1 driver_override节点name和device_driver的name匹配
+							  "1c2ac00.i2c"								//2.5 device_driver的name和 platform_device.name(寄存器.节点名或者就是节点名1000000.clock or sound_ac108)匹配
+					.pm     = mv64xxx_i2c_pm_ops,
+					.of_match_table = mv64xxx_i2c_of_match_table,		//2.2 用of_match_table里的name和备树的compatible匹配
+			//		.probe_type = PROBE_PREFER_ASYNCHRONOUS				//设置该驱动可以异步加载
+				},
+			};
+	2.2、平台驱动device_driver的of_match_table里的name与设备树的compatible匹配；
 	2.3、acpi，嵌入式不用此匹配；
-	2.4、平台驱动的id_table.name与平台设备name(一般情况是寄存器.节点名或者就是节点名1000000.clock/sound_ac108)匹配；
+	2.4、平台驱动的id_table.name与平台设备 name(一般情况是寄存器.节点名或者就是节点名1000000.clock or sound_ac108，参考8.platform_device.txt初始化platform_device.name)匹配；
 	2.5、平台驱动name与平台设备name匹配
+
 3、匹配成功后会设置驱动依赖的gpio；
-4、probe调用者，先调用device_driver->probe，通过驱动所在的bus得到platform_driver.probe，最后调用到驱动的probe；
+4、platform驱动probe时，先调用platform驱动registe的API设置的probe函数，再找到driver设置的probe调用到真正的probe函数；
+5、创建/dev/节点关键是device结构体是否设置主从设备号
+
+
+============================================================
+
+
 
 mount： 打印当前已挂载虚拟、实体分区的详细数据；
 tmpfs： 空虚拟文件分区；
@@ -17,7 +45,7 @@ start_kernel()
 	vfs_caches_init()
 		mnt_init()
 			sysfs_init()
-				register_filesystem(&sysfs_fs_type)										//创建虚拟系统文件分区,占用ddr空间，可以挂载(mount -t sysfs none /mnt) 888
+				register_filesystem(&sysfs_fs_type)										//创建虚拟系统文件分区,占用ddr空间，可以挂载(mount -t sysfs(各种虚拟文件系统name) none /mnt) 888
 
 
 
@@ -49,19 +77,19 @@ start_kernel()
 							proc_symlink("device-tree", NULL, "/sys/firmware/devicetree/base");	//创建/sys/firmware/devicetree/base/的软连接/proc/device-tree/
 
 						platform_bus_init()
-							device_register(&platform_bus)								//注册platform bus设备
+							device_register(&platform_bus)								//注册platform bus设备(创建/sys/devices/platform/)
 								device_initialize(dev)
 									dev->kobj.kset = devices_kset						//这个device结构体的kobj的kset为devices_kset，即根为devices_kset
 									kobject_init(&dev->kobj, &device_ktype);			//初始化device结构体的kobj结构体
 									...
-								device_add(dev)
+***								device_add(dev)
 									...
 									dev_set_name();										//一般soc以外的一些节点在这设置name,如cpu
 									...
 									parent = get_device(dev->parent);
 									kobj = get_device_parent(dev, parent)
 										if (parent == NULL)
-											parent_kobj = virtual_device_parent(dev)	//若没有父设备，则创建一个/sys/devices/virtual/的kobj为父
+											parent_kobj = virtual_device_parent(dev)	//若没有父设备，则创建一个/sys/devices/virtual/的kobj为父，一般驱动中新建的sysfs在不指定父设备的情况下
 									if (kobj)
 									dev->kobj.parent = kobj;							//设置parent kobj
 									
@@ -82,7 +110,7 @@ start_kernel()
 										device_create_file(dev, &dev_attr_online);									//如果有需要当前device目录下创建online
 
 									bus_add_device(dev)																//将设备加入到管理它的bus总线的设备链表上 888
-										sysfs_create_link(&bus->p->devices_kset->kobj, &dev->kobj, dev_name(dev))	//在改设备的/sys/bus/xxx/devices/下创建改dev name的软连接文件,软连接到/sys/devices/platform/xxx下 888
+										sysfs_create_link(&bus->p->devices_kset->kobj, &dev->kobj, dev_name(dev))	//在该设备的/sys/bus/xxx/devices/下创建该dev name的软连接文件,软连接到/sys/devices/platform/xxx下 888
 										sysfs_create_link(&dev->kobj, &dev->bus->p->subsys.kobj, "subsystem")		//在当前device(设备树一级子节点和soc下的二级子节点)目录(dev->kobj(/sys/devices/platform/xxx))下,创建subsystem软连接文件,连接到该设备的bus obj下 888
 									dpm_sysfs_add(dev)																//电源管理相关,解析设备树创建devices时一般不会设置
 									device_pm_add(dev)																//同上
@@ -111,7 +139,7 @@ start_kernel()
 																error = fn(drv, data) => __device_attach_driver(drv, data)
 																	ret = driver_match_device(drv, dev)
 																		drv->bus->match(dev, drv) => platform_bus_type.match => platform_match(dev, drv)
-																			if (pdev->driver_override)											//1、platform_device设置了driver_override时，匹配driver->name，一般不用
+																			if (pdev->driver_override)											//1、platform_device 设置了driver_override时，匹配driver->name，一般不用
 																				return !strcmp(pdev->driver_override, drv->name)
 																			if (of_driver_match_device(dev, drv))
 																				of_match_device(drv->of_match_table, dev)						//2、匹配驱动的of_match_table对应的compatible(type、name)属性，和设备对应的dts节点compatible比较,一般用这个方案匹配 888
@@ -148,7 +176,7 @@ start_kernel()
 																				dev->bus->probe(dev)											//一般没有bus的probe
 																			if (drv->probe)
 																				drv->probe(dev)													//device_driver->probe,这个不是platform_driver的probe
-																					platform_drv_probe(dev)										//在驱动注册时的时候(__platform_driver_register),配置的edevice_driver的probe函数，同时会设置bus类型 888
+																					platform_drv_probe(dev)										//在驱动注册时的时候(__platform_driver_register),配置的device_driver的probe函数，同时会设置bus类型 888
 																						struct platform_driver *drv = to_platform_driver(_dev->driver)		//通过device_driver得到platform_driver
 																						if (drv->probe)
 																							drv->probe(dev)										//这才是驱动platform_driver的probe

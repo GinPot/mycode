@@ -14,9 +14,9 @@
 	2、reg-names
 
 sysfs:
-	1、部分一节子节点、soc下的二级子节点device_add时会在/sys/devices/platform/下创建对应的目录,目录下:
+	1、部分一级子节点、soc下的二级子节点device_add时会在/sys/devices/platform/下创建对应的目录,目录下:
 		(1)创建of_node软连接，指向/sys/firmware/devicetree/base/下的目录；
-		(2)创建subsystem软连接，指向/sys/bus/platform/,表示其bus类型；
+		(2)创建subsystem软连接，指向/sys/bus/platform/,表示其bus类型(此处的bus类型及为platform)；
 		(3)在/sys/bus/xxx(bus name)/devices/下创建改device name的软连接，指向/sys/devices/platform/xxx的具体设备
 	2、在需要创建/dev/节点的device
 		(1)在对应的/sys/devices/platform/xx下面创建dev文件，保存主次设备号信息
@@ -69,10 +69,12 @@ of_platform_populate(root, of_default_bus_match_table, lookup, parent)					//除
 
 
 
-			of_platform_device_create_pdata(bus, bus_id, platform_data, parent)			//根据该节点创建device
+***			of_platform_device_create_pdata(bus, bus_id, platform_data, parent)			//根据该节点创建device
 				of_device_is_available(np)												//节点没有status，或者status为okay或ok都继续往下创建
 				dev = of_device_alloc(np, bus_id, parent)
 					dev = platform_device_alloc("", PLATFORM_DEVID_NONE)				//申请创建platform_device结构体，初始化改结构体的device成员的object
+						pa = kzalloc(sizeof(*pa) + strlen(name) + 1, GFP_KERNEL)
+							device_initialize(&pa->pdev.dev);							//初始化platform_device的device结构体
 					of_address_to_resource(np, num_reg, &temp_res)
 						addrp = of_get_address(dev, index, &size, &flags)
 							parent = of_get_parent(dev)									//这里取的parent一般为根节点或者带有 of_default_bus_match_table 属性的soc节点
@@ -104,10 +106,10 @@ of_platform_populate(root, of_default_bus_match_table, lookup, parent)					//除
 					...
 					dev->dev.parent = parent ? : &platform_bus							//设置parent为platform_bus
 					of_device_make_bus_id(&dev->dev);									//一般soc下的一级子节点都在这设置dev->obj.name(一般情况是寄存器.节点名或者就是节点名1000000.clock/sound_ac108),同platform_device.name 888
-				dev->dev.bus = &platform_bus_type										//设置bus为platform_bus_type(后续device_add中会根据bus添加device的软连接subsystem, 和在)  888
+***				dev->dev.bus = &platform_bus_type										//设置bus为platform_bus_type(后续device_add中会根据bus添加device的软连接subsystem, 和在)  888
 				of_device_add(dev)
 					ofdev->name = dev_name(&ofdev->dev)									//设置platform_device.name为dev->obj.name
-					ofdev->id = PLATFORM_DEVID_NONE										//设置platform_device.id为-1
+					ofdev->id = PLATFORM_DEVID_NONE										//设置platform_device.id为-1，在用id_table probe时会重新设置id
 
 
 
@@ -117,10 +119,24 @@ of_platform_populate(root, of_default_bus_match_table, lookup, parent)					//除
 
 
 
-
-
-
-
+of_device_make_bus_id(&dev->dev);									//一般soc下的一级子节点都在这设置dev->obj.name(一般情况是寄存器.节点名或者就是节点名1000000.clock/sound_ac108),同platform_device.name 888
+	没有寄存器的直接取节点名，如下面节点对应的name就是“display-engine”：
+		display-engine {
+			compatible = "allwinner,sunh5-display-engine";
+			allwinner,pipelines = <0x4>;
+			status = "okay";
+		};
+	有寄存器的就是寄存器.节点名，如下对应的name就是“1000000.clock”：
+			clock@1000000 {
+				reg = <0x1000000 0x100000>;
+				clocks = <0x3 0x65 0x3 0x30>;
+				clock-names = "mod", "bus";
+				resets = <0x3 0x22>;
+				#clock-cells = <0x1>;
+				#reset-cells = <0x1>;
+				compatible = "allwinner,sun50i-h5-de2-clk";
+				phandle = <0x2>;
+			};
 
 
 

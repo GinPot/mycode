@@ -18,7 +18,7 @@ static struct platform_driver mv64xxx_i2c_driver = {
 	.probe	= mv64xxx_i2c_probe,
 	.remove	= mv64xxx_i2c_remove,
 	.driver	= {
-		.name	= MV64XXX_I2C_CTLR_NAME,
+		.name	= "mv64xxx_i2c",
 		.pm     = mv64xxx_i2c_pm_ops,
 		.of_match_table = mv64xxx_i2c_of_match_table,
 //		.probe_type = PROBE_PREFER_ASYNCHRONOUS				//设置该驱动可以异步加载
@@ -88,7 +88,7 @@ mv64xxx_i2c_probe()
 	request_irq(drv_data->irq, mv64xxx_i2c_intr, 0, MV64XXX_I2C_CTLR_NAME, drv_data)		//注册中断
 	
 	i2c_add_numbered_adapter(&drv_data->adapter)											//注册adapter 888
-		if (adap->nr == -1) /* -1 means dynamically assign bus id */
+		if (adap->nr == -1) /* -1 means dynamically assign bus id */						//platform_device一般为-1
 			i2c_add_adapter(adap)
 				if (dev->of_node)
 					id = of_alias_get_id(dev->of_node, "i2c");								//通过别名，匹配dtb节点获取bus id, 若获取不到，也可通过动态申请bus id
@@ -99,12 +99,29 @@ mv64xxx_i2c_probe()
 								if (WARN(!adap->name[0], "i2c adapter has no name"))					//需要有adap->name
 								if (!adap->algo)
 								...
+								adap->dev.bus = &i2c_bus_type;
+								adap->dev.type = &i2c_adapter_type;
 								device_register(&adap->dev)												//注册adapter的dev
 								...
 								class_compat_create_link(i2c_adapter_compat_class, &adap->dev, adap->dev.parent)	//在/sys/class/i2c-adapter/下面创建软连接i2c-x指向/sys/devices/platform/soc/1c2ac00.i2c/i2c-x
-								if (device_link)
-									error = sysfs_create_link(&dev->kobj, &device_link->kobj, "device")				///sys/devices/platform/soc/1c2ac00.i2c/i2c-0/有父类的话，在当前目录下创建软连接device指向/sys/devices/platform/soc/1c2ac00.i2c
-								未完待续！！！
+									if (device_link)
+										error = sysfs_create_link(&dev->kobj, &device_link->kobj, "device")			//sys/devices/platform/soc/1c2ac00.i2c/i2c-0/有父类的话，在当前目录下创建软连接device指向/sys/devices/platform/soc/1c2ac00.i2c
+								...
+***								of_i2c_register_devices(adap)											//取i2c控制器驱动节点下的子节点注册设备，并挂载i2c bus下
+									for_each_available_child_of_node(bus, node)
+										of_i2c_register_device(adap, node)
+											of_i2c_get_board_info(&adap->dev, node, &info);
+												of_modalias_node(node, info->type, sizeof(info->type)	//将i2c设备节点compatible对应的字段“,”号后面的字符(如x-power,ac108，则为ac108)赋给info->type
+												of_property_read_u32(node, "reg", &addr)
+												info->addr = addr										//保存i2c设备地址
+											i2c_new_device(adap, &info)
+												i2c_new_client_device(adap, info)
+													client->addr = info->addr
+													strlcpy(client->name, info->type, sizeof(client->name))
+													client->dev.parent = &client->adapter->dev
+													client->dev.bus = &i2c_bus_type
+													client->dev.type = &i2c_client_type
+													i2c_dev_set_name(adap, client, info)
 
 	
 

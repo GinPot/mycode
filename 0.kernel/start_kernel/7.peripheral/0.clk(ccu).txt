@@ -1,0 +1,234 @@
+1、一般使能clk时分两部分：
+	1.1、clk_prepare，主要运行因需要等待时钟稳定而会进入睡觉的操作(在原子操作、中断等上下文中不能使用)；
+	1.2、clk_enable，不会进入睡眠的时钟操作；
+
+
+
+/**************************************************************************clk 消费者*****************************************************************************************/
+
+osc24M: osc24M_clk {
+	#clock-cells = <0>;
+	compatible = "fixed-clock";
+	clock-frequency = <24000000>;
+	clock-accuracy = <50000>;
+	clock-output-names = "osc24M";
+};
+ccu: clock@1c20000 {
+	/* compatible is in per SoC .dtsi file */
+	reg = <0x01c20000 0x400>;
+	clocks = <&osc24M>, <&rtc 0>;
+	clock-names = "hosc", "losc";
+	#clock-cells = <1>;
+	#reset-cells = <1>;
+};
+video-codec@1c0e000 {
+	compatible = "allwinner,sun50i-h5-video-engine";
+	reg = <0x01c0e000 0x1000>;
+	clocks = <&ccu CLK_BUS_VE>, <&ccu CLK_VE>,
+		 <&ccu CLK_DRAM_VE>;
+	clock-names = "ahb", "mod", "ram";
+	resets = <&ccu RST_BUS_VE>;
+	interrupts = <GIC_SPI 58 IRQ_TYPE_LEVEL_HIGH>;
+	allwinner,sram = <&ve_sram 1>;
+};
+
+获取模块对应的clk资源：
+struct clk *ahb_clk = devm_clk_get(dev, "ahb");
+	struct clk *clk = clk_get(dev, id)																// drivers\clk\
+		of_clk_get_hw(dev->of_node, 0, con_id)
+			of_parse_clkspec(np, index, con_id, &clkspec)
+				index = of_property_match_string(np, "clock-names", name)							//根据"ahb"名字确认是第几个clk，如"ahb"对应节点里第一个，"mod"对应第二个
+					of_parse_phandle_with_args(np, "clocks", "#clock-cells", index, out_args)
+						__of_parse_phandle_with_args(np, list_name, cells_name, 0, index, out_args)
+							of_for_each_phandle(&it, rc, np, list_name, cells_name, cell_count)
+								if (cur_index == index)												//找到节点中对应的哪个clk
+									of_phandle_iterator_args(&it, out_args->args, MAX_PHANDLE_ARGS)	//获取这个clk的父节点、数据个数，数据
+									out_args->np = it.node											//如"ahb"父节点是ccu，有1个数据，数据为CLK_BUS_VE
+									out_args->args_count = c
+			hw = of_clk_get_hw_from_clkspec(&clkspec)
+				list_for_each_entry(provider, &of_clk_providers, link)
+					if (provider->node == clkspec->np)												//找到ccu对应的节点provider
+						hw = __of_clk_get_hw_from_provider(provider, clkspec)
+							provider->get_hw(clkspec, provider->data)
+								of_clk_hw_onecell_get(clkspec, provider->data)
+									unsigned int idx = clkspec->args[0]								//获取改模块设备树的clk节点数据，如CLK_BUS_VE
+										return hw_data->hws[idx]									//找到改模块的clk结构体struct clk_hw
+		clk_hw_create_clk(dev, hw, dev_id, con_id)
+			core = hws->core;
+			clk = alloc_clk(core, dev_id, con_id)													//创建消费者使用的struct clk结构体数据，记录device.name,clk设备树种clock-names("ahb"), 及最红要的clk_core *core
+
+使能模块clk：
+clk_prepare_enable(cedar_devp->ahb_clk)
+	clk_prepare(clk)
+	clk_enable(clk)
+
+
+
+/**************************************************************************clk 提供者*****************************************************************************************/
+
+const struct clk_ops ccu_gate_ops = {
+	.disable	= ccu_gate_disable,
+	.enable		= ccu_gate_enable,
+	.is_enabled	= ccu_gate_is_enabled,
+	.round_rate	= ccu_gate_round_rate,
+	.set_rate	= ccu_gate_set_rate,
+	.recalc_rate	= ccu_gate_recalc_rate,
+};
+
+
+struct clk_init_data {
+	const char		*name;
+	const struct clk_ops	*ops;
+	/* Only one of the following three should be assigned */
+	const char		* const *parent_names;
+	const struct clk_parent_data	*parent_data;
+	const struct clk_hw		**parent_hws;
+	u8			num_parents;
+	unsigned long		flags;
+};
+
+struct clk_hw {
+	struct clk_core *core;
+	struct clk *clk;
+	const struct clk_init_data *init;
+};
+
+struct ccu_common {
+	void __iomem	*base;
+	u16		reg;
+	u16		lock_reg;
+	u32		prediv;
+
+	unsigned long	features;
+	spinlock_t	*lock;
+	struct clk_hw	hw;
+};
+
+struct ccu_gate {
+	u32			enable;
+
+	struct ccu_common	common;
+};
+
+#define CLK_HW_INIT(_name, _parent, _ops, _flags)		\
+	(&(struct clk_init_data) {				\
+		.flags		= _flags,			\
+		.name		= _name,			\
+		.parent_names	= (const char *[]) { _parent },	\
+		.num_parents	= 1,				\
+		.ops		= _ops,				\
+	})
+
+#define SUNXI_CCU_GATE(_struct, _name, _parent, _reg, _gate, _flags)	\
+	struct ccu_gate _struct = {					\
+		.enable	= _gate,					\
+		.common	= {						\
+			.reg		= _reg,				\
+			.hw.init	= CLK_HW_INIT(_name,		\
+						      _parent,		\
+						      &ccu_gate_ops,	\
+						      _flags),		\
+		}							\
+	}
+
+static SUNXI_CCU_GATE(bus_ve_clk,	"bus-ve",	"ahb1", 0x064, BIT(0), 0)
+
+/********************************************************************************************/
+
+struct clk_hw_onecell_data {
+	unsigned int num;
+	struct clk_hw *hws[];
+};
+
+/********************************************************************************************/
+
+static struct clk_hw_onecell_data sun50i_h5_hw_clks = {
+	.hws	= {
+		[CLK_PLL_CPUX]		= &pll_cpux_clk.common.hw,
+		[CLK_PLL_AUDIO_BASE]	= &pll_audio_base_clk.common.hw,
+		[CLK_PLL_AUDIO]		= &pll_audio_clk.hw,
+		[CLK_PLL_AUDIO_2X]	= &pll_audio_2x_clk.hw,
+		[CLK_PLL_AUDIO_4X]	= &pll_audio_4x_clk.hw,
+		...
+		[CLK_BUS_VE]		= &bus_ve_clk.common.hw,
+		...
+	},
+	.num	= CLK_NUMBER_H5,
+};
+	
+static const struct sunxi_ccu_desc sun50i_h5_ccu_desc = {
+	.ccu_clks	= sun50i_h5_ccu_clks,
+	.num_ccu_clks	= ARRAY_SIZE(sun50i_h5_ccu_clks),
+
+	.hw_clks	= &sun50i_h5_hw_clks,																//所有模块clk集合，按CLK_BUS_VE作为序号寻
+
+	.resets		= sun50i_h5_ccu_resets,
+	.num_resets	= ARRAY_SIZE(sun50i_h5_ccu_resets),
+};
+
+CLK_OF_DECLARE(sun50i_h5_ccu, "allwinner,sun50i-h5-ccu", sun50i_h5_ccu_setup);
+	sunxi_h3_h5_ccu_init(node, &sun50i_h5_ccu_desc)
+		sunxi_ccu_probe(node, reg, desc);
+			of_clk_add_hw_provider(node, of_clk_hw_onecell_get, desc->hw_clks)
+				struct of_clk_provider *cp
+				cp->data = desc->hw_clks
+				cp->get_hw = of_clk_hw_onecell_get
+				list_add(&cp->link, &of_clk_providers)												//将模块clk集合加入到of_clk_providers链表中
+
+
+
+
+
+
+
+
+
+bus-ve("ahb")的父时钟("ahb1")信息：
+品用时需要结合数据手册中的时钟树！
+
+static const char * const ahb1_parents[] = { "osc32k", "osc24M", "axi" , "pll-periph0" };
+static const struct ccu_mux_var_prediv ahb1_predivs[] = {
+	{ .index = 3, .shift = 6, .width = 2 },
+};
+static struct ccu_div ahb1_clk = {
+	.div		= _SUNXI_CCU_DIV_FLAGS(4, 2, CLK_DIVIDER_POWER_OF_TWO),								//父时钟的分频器，在0x054编译4bit，分频器位宽2bit，即寄存器的0x054[4:5]
+
+	.mux		= {																					//父时钟的时钟源选择器，寄存器的0x054[12:13]
+		.shift	= 12,
+		.width	= 2,
+
+		.var_predivs	= ahb1_predivs,																//父时钟的时钟源在进入mux之前的分配器，器的0x054[6:7]
+		.n_var_predivs	= ARRAY_SIZE(ahb1_predivs),
+	},
+
+	.common		= {
+		.reg		= 0x054,
+		.features	= CCU_FEATURE_VARIABLE_PREDIV,
+		.hw.init	= CLK_HW_INIT_PARENTS("ahb1",
+						      ahb1_parents,
+						      &ccu_div_ops,
+						      0),
+	},
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

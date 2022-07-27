@@ -57,7 +57,7 @@ struct fdt_property {	//属性数据格式
 	FDT_BEGIN_NODE(0x00000001)：	标识一个node的开始
 	FDT_END_NODE(0x00000002)：	标识一个node的结束
 	FDT_PROP(0x00000003)：		标识node中property(属性)的开始
-	FDT_NOP(0x00000004)：		所有的设备树解析程序都会忽略该令牌，一般用于覆盖树中的属性或者节点，以将其从书中删除。
+	FDT_NOP(0x00000004)：		所有的设备树解析程序都会忽略该令牌，一般用于覆盖树中的属性或者节点，以将其从树中删除。
 	FDT_END(0x00000005)：		标识structure block区域的结束
 
 
