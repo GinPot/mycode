@@ -3,7 +3,7 @@
 #   This script will delete the user with given name and
 #   delete his samba share point as well.
 # Author:
-#   Lai Bin (bin.lai@yfve.com.cn)
+#   Lai Bin
 # Updated:
 #   2019/01/17
 

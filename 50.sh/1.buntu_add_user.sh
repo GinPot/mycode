@@ -3,7 +3,7 @@
 #   This script will create a normal user with given name and
 #   create a samba share for this user.
 # Author:
-#   Lai Bin (bin.lai@yfve.com.cn)
+#   Lai Bin
 # Updated:
 #   2019/01/17
 
