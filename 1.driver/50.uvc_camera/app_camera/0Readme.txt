@@ -66,12 +66,16 @@ libjpeg-turbo:
 	https://blog.csdn.net/Dancer__Sky/article/details/78631577
 	https://sourceforge.net/projects/libjpeg-turbo/files/
 
-	apt-get install nasm  libtool
+	apt-get install nasm  libtool cmake
 	
 	$ mkdir build
 	$ cd build
 	$ mkdir install_lib
-	$ cmake .. -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX:PATH=/root/work/display/server/libjpeg-turbo-2.1.3/build/install_lib/usr/local   -DCMAKE_INSTALL_MANDIR:PATH=/root/work/display/server/libjpeg-turbo-2.1.3/build/install_lib/usr/local/share/man -DCMAKE_INSTALL_DOCDIR:PATH=/root/work/display/server/libjpeg-turbo-2.1.3/build/install_lib/usr/local/share/doc/libjpeg-turbo-1.5.9  -DWITH_JPEG8=1
+	$ cmake .. -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX:PATH=/root/tmp/libjpeg-turbo-2.1.4/build/install_lib/usr/local   -DCMAKE_INSTALL_MANDIR:PATH=/root/tmp/libjpeg-turbo-2.1.4/build/install_lib/usr/local/share/man -DCMAKE_INSTALL_DOCDIR:PATH=/root/tmp/libjpeg-turbo-2.1.4/build/install_lib/usr/local/share/doc/libjpeg-turbo-2.1.4  -DWITH_JPEG8=1
+	$ make
+	$ make install
+	$ make test
+	
 	
 	-G “Unix Makefiles” 生成unix类型系统的makefile文件。
 	-DCMAKE_INSTALL_PREFIX:PATH=/usr/local 指定库安装路径，否则默认为/opt/libjpeg-turbo。
@@ -95,10 +99,16 @@ ffmpeg:
 /*******************************************************************************************************************************/	
 	
 
+libyuv:
+	apt-get install g++ libjpeg-dev
+
+	mkdir build
+	cd build
+	cmake -DCMAKE_INSTALL_PREFIX=/root/tmp/libyuv-main/build/build_libs -DCMAKE_BUILD_TYPE="Release" ..
+	cmake --build . --target install --config Release
+
+	cmake ..
+    cmake --build .
 	
-	
-	
-	
-	
-	
-	
+
+ 
