@@ -1,0 +1,69 @@
+0、中断上下文
+	irq_enter(); 		//说明进入中断上下文，实际线程结构体的preempt_count 16-19bit 加1(变成非0值不能抢占)，4bit最大支持15层嵌套
+    irq_exit();
+
+
+
+1、禁止本地中断
+	local_irq_save(flags)
+		arch_local_irq_save(flags)
+			flags = arch_local_save_flags()
+			arch_local_irq_disable()
+	local_irq_restore(flags)
+		raw_local_irq_restore(flags)
+			arch_local_irq_restore(flags)
+	
+2、禁止软中断：			//线程上下文调用时也可以看出进入软件中断上下文
+	local_bh_disable()
+	local_bh_enable()
+
+3、禁止线程抢占：
+	preempt_disable();
+	preempt_enable();
+	
+4、禁止tasklet：
+	tasklet_disable();
+	tasklet_enable();
+	
+	
+	
+
+in_irq()				//preempt_count 16-19bit非0代表处于硬件中断上下文
+in_softirq()			//preempt_count 8-15bit非0代表处于软件中断上下文
+in_serving_softirq()	//preempt_count 8bit非0代表处于软件中断handler
+in_interrupt()			//preempt_count 8-20bit非0代表处于中断
+
+irqs_disabled()			//返回1表示本都CPU中断是disable的，可能是：local_irq_save/local_irq_disable/local_bh_disable等代码造成的
+==============================================================================================================
+
+线程结构体：
+struct task_struct {
+	struct thread_info		thread_info{
+		...
+		unsigned long	   	flags;			//是否要抢占当前进程还要看是否设定了TIF_NEED_RESCHED标记
+		int		   			preempt_count;	//不等于0表示不能抢占(调用preempt_disable显式的禁止了:或处于中断上下文（NMI、hardirq、softirq）和spinlock临界区(会调用preempt_disable禁止抢占))，等于0表示具备抢占条件；
+		...
+	}
+
+}
+
+
+preempt_count数据格式：
+
+	 -------------------------------------------------------------------------------
+	|  Reserved bit  | 21bit | 20bit |  16-19bit  |   9-15bit   | 8bit |   0-7bit   |
+	 -------------------------------------------------------------------------------
+	                  Preempt  NMI      hardirq        softirq count     preemption
+					   acrive  flag      count                             count
+
+	NMI:non-maskable interrupt,不能屏蔽的中断
+
+0-7bit preemption count： 用来记录当前被显式的禁止抢占的次数，也就是说，每调用一次preempt_disable，preemption count就会加一，调用preempt_enable，该区域的数值会减去一。preempt_disable和preempt_enable必须成对出现，可以嵌套，最大嵌套的深度是255
+8bit： 判断是否在softirq中断上下文；
+9-15bit： 内核同步的需求，进程上下文需要禁止softirq，提供了local_bh_enable和local_bh_disable这样的接口函数，最大可以支持127次嵌套
+16-19bit hardirq count： 描述当前中断handler嵌套的深度,在irq_enter()中调用preempt_count_add(HARDIRQ_OFFSET)加1；现在内核一般不会发生中断嵌套，除非在具体中断handler中可能被其他人(不熟悉驱动的人)重新打开中断，就可能会发生嵌套，最大嵌套深度15次；
+
+
+
+
+

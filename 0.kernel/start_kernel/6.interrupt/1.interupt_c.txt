@@ -1,0 +1,395 @@
+1、EOI第两步：  
+	gicv2：GIC_CPU_EOI和GIC_CPU_DEACTIVATE
+	gicv3：SYS_ICC_EOIR1_EL1和SYS_ICC_DIR_EL1
+
+2、gic->chip： 中断控制器信息
+  gic->domain： 硬件中断号和linux软件中断号的对应关系；
+
+3、GPIO控制器驱动直接设置hander并使能中断(没有/proc/interrupts信息),gpio驱动也直接用gpio的domain申请中断，
+	触发是先调用的中断控制的hander再调用到gpio驱动的hander
+
+4、primary GIC不需要映射IPI的中断；secondary GIC的SGI和PPI都不需要(primary GIC已经提供)
+
+5、desc->handle是在硬件中断map软件中断过程时设置的，为中断通用的代码handle_edge_irq/handle_fasteoi_irq；其中再调用action->handler处理驱动注册的中断处理函数 888
+
+6、中断线程在中断注册时kthread_create创建，在中断处理过程中wake_up_process唤醒
+
+7、改变gpio控制器中断的亲和性，才能改变对应GPIO的亲和性
+
+8、使能禁止中断过程
+	1、进入异常中断时arm64会自动设置本CPU屏蔽DAIF=0x3C0(汇编阶段会重新使能DA_F),完全退出(汇编阶段也退出)异常后自动使能(屏蔽和使能由硬件控制，非软件逻辑)；
+	2、GIC的分发器在产生中断时状态会由Inactive切换到Pending(此时中断cpu接口不会发送其他中断)，CPU通过处理器接口读取中断信息(应答GIC)会使状态切换到Active，此时GIC将会再次产生中断
+	3、CPU屏蔽本CPU中断后处理hander时再次发生同一个中断状态切为Active&Pending，分发给其他CPU处理；其他CPU会应答处理，但后面检测到改中断源的前一个中断正在处理便会设置软件状态为Pending并设置GIC屏蔽该中断(使这中断源不发出)然后退出，
+		等待正在处理该中断的CPU处理完再交给这个CPU继续处理这个中断；GIC因为被另外CPU应答(第二个中断被软件锁存)，又切到Active，CPU屏蔽的是GIC和CPU之间的通路，GIC可以继续接收第三个中断源并在GIC硬件层面锁存，但不会再给CPU，第四个中断源就将会丢弃；
+
+	4、GIC分发器同一个中断源在pending时不会处理新的中断，在CPU应答后(ack)可以接收新的中断源(同中断源)；
+	5、不同中断源同时触发到同一个CPU上需要考虑抢占，触发到不同CPU上处理简单些
+
+9、本CPU中断禁止的场景
+	1、进入异常时自动禁止，退出异常时自动使能；
+	2、程序调用spin_lock_bh/spin_lock_irq/spin_lock_irqsave等接口主动禁止本CPU中断/软件中断
+
+10、本CPU中断的嵌套/抢占
+	1、中断嵌套：新版本内核在进入异常后就会屏蔽中断DAIF,不会存在中断嵌套的情况；但在具体中断handler中可能被其他人(不熟悉驱动的人)重新打开中断，就可能会发生嵌套，最大嵌套深度15次；
+	2、中断抢占：没有软件上抢占的说法；主要是中断控制器GIC自动实现高优先级的中断抢占(软件上可以配置中断优先级？)，中断在触发pengding，cpu ack之前高优先级可以抢占低优先先触发
+
+11、抢占preempt
+	见99.context.txt
+
+
+linux kernel采取了统一的策略：
+基本函数名字是一样的，只不过需要调用者自己加锁保护的那个函数需要增加__的前缀，
+例如内核有有下面两个函数：setup_irq和__setup_irq。这里，我们在setup irq的时候已经调用chip_bus_lock进行保护，因此使用lock free的版本__setup_irq。
+
+
+对于multi processor系统，不可能初始化代码在所有的processor上都执行一遍，实际上，系统的硬件会选取一个processor作为引导处理器，我们称之 BSP(bootstrap processor)；
+这个processor会首先执行，其他的CPU都是处于reset状态，等到BSP初始化完成之后，release所有的non-BSP
+==============================================================================================================
+中断驱动加载：
+
+gic: interrupt-controller@1c81000 {
+	compatible = "arm,gic-400";
+	reg = <0x01c81000 0x1000>,		//Distributor address range
+	      <0x01c82000 0x2000>,		//CPU interface address range
+	      <0x01c84000 0x2000>,		//Virtual interface control block
+	      <0x01c86000 0x2000>;		//Virtual CPU interfaces
+	interrupt-controller;
+	#interrupt-cells = <3>;
+	interrupts = <GIC_PPI 9 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>;
+};
+
+
+
+
+IRQCHIP_DECLARE 主要是填充下面结构体并存放在特殊的section中(__irqchip_of_table)：
+struct of_device_id
+{
+    char    name[32];－－－－－－要匹配的device node的名字
+    char    type[32];－－－－－－－要匹配的device node的类型
+    char    compatible[128];－－－匹配字符串（DT compatible string），用来匹配适合的device node
+    const void *data;－－－－－－－－对于GIC，这里是初始化函数指针
+};
+
+
+start_kernel()
+	init_IRQ()																									//arch\arm64\kernel\irq.c
+		irqchip_init();																							//drivers\irqchip\irqchip.c
+			of_irq_init(__irqchip_of_table);																	//找到在IRQCHIP_DECLARE声明定义的重点节点
+			...																									//如有多个中断控制节点，则形成中断控制器树状结构，后续按一定顺序初始化
+			desc->irq_init_cb(desc->dev, desc->interrupt_parent) ==> match->data ==> gic_of_init(desc->dev, desc->interrupt_parent)		//运行gic_of_init函数
+
+
+IRQCHIP_DECLARE(gic_400, "arm,gic-400", gic_of_init);
+	...
+	gic_of_setup(gic, node)																						//获取中断控制器寄存器信息
+		gic->raw_dist_base = of_iomap(node, 0);																	//map gic dist registers
+		gic->raw_cpu_base = of_iomap(node, 1);																	//map gic cpu registers
+		if (of_property_read_u32(node, "cpu-offset", &gic->percpu_offset))
+		//banked register: 在一个地址上提供多个寄存器副本。比如说系统中有四个CPU，这些CPU访问某个寄存器的时候地址是一样的，但是对于banked register，
+		//实际上，不同的CPU访问的是不同的寄存器，虽然它们的地址是一样的。如果GIC没有banked register，那么需要提供根据CPU index给出一系列地址偏移，
+		//而地址偏移=cpu-offset * cpu-nr
+	...
+	// gic_cnt 标识GIC number，等于0就是root GIC
+	if (gic_cnt == 0 && !gic_check_eoimode(node, &gic->raw_cpu_base))
+		static_branch_disable(&supports_deactivate_key);														//默认支持split EOI/Deactivate,如果条件不允许则禁用
+	...
+	__gic_init_bases(gic, &node->fwnode)																		// 888
+		...
+		set_smp_cross_call(gic_raise_softirq);																	// 888 CPU之间相互通信的callback函数，一个cpu软件控制行为传递到其他cpu上，通过触发其他cpu的软中断来实现通知(实际就是触发IPI中断)，如：一个cpu运行reboot时，会通过改callback通知其他cpu reboot
+		...
+		cpuhp_setup_state_nocalls(CPUHP_AP_IRQ_GIC_STARTING, "irqchip/arm/gic:starting", gic_starting_cpu, NULL)	//cpu唤醒时会调用到这
+		...
+		gic_init_chip(gic, NULL, name, true);
+			gic->chip = gic_chip;
+			gic->chip.irq_eoi = gic_eoimode1_eoi_irq;															//设置EOI第二步的会带函数，设置GIC_CPU_DEACTIVATE
+		gic_init_bases(gic, handle)
+			gic_irqs = readl_relaxed(gic_data_dist_base(gic) + GIC_DIST_CTR) & 0x1f								//从GIC_DIST_CTR寄存器（这是V1版本的寄存器名字，V2中是GICD_TYPER，Interrupt Controller Type Register,）的低五位ITLinesNumber获取的;如果ITLinesNumber等于N，那么最大支持的中断数目是32(N+1)。此外，GIC规范规定最大的中断数目不能超过1020，1020-1023是有特别用户的interrupt ID
+			gic_irqs = (gic_irqs + 1) * 32																		//获取soc总的中断号个数
+			gic->domain = irq_domain_create_linear(handle, gic_irqs,											//创建中断控制器的domain，但还没有具体的硬件中断和软件中断的对应，只是确定关系
+						       &gic_irq_domain_hierarchy_ops,
+						       gic);
+				irq_domain_check_hierarchy(domain)
+					if (domain->ops->alloc)
+						domain->flags |= IRQ_DOMAIN_FLAG_HIERARCHY
+			...
+			gic_dist_init(gic)																					//中断分发器初始化
+***********		writel_relaxed(GICD_DISABLE, base + GIC_DIST_CTRL);												//disable 中断分发器，GIC不会接收，也不会发送所有中断
+				cpumask = gic_get_cpumask(gic);																	// 888 亲和性设置：这里读取硬件中断号0~3的IPI中断的亲和性，因为IPI的中断不需要设置中断亲和性(硬件自动设置)，读取的结果能反应当前cpu是接在哪个中断的CPU interface上
+				cpumask |= cpumask << 8;																		//这里也能反应gicv2最多只能支持8核
+				cpumask |= cpumask << 16;																		//GICD_ITARGETSR寄存器为32bit，分为4组对应4个硬件中断号，每个硬件中断占8bit，刚好设置8个核的亲和性
+				for (i = 32; i < gic_irqs; i += 4)
+					writel_relaxed(cpumask, base + GIC_DIST_TARGET + i * 4 / 4);								// 88 把所有spi中断的亲和性都设置到这个CPU上；但实际没什么意义，因为在申请具体中断时还会再次根据把亲和性设置到CPU0上
+				...
+				gic_dist_config(base, gic_irqs, NULL)
+					for (i = 32; i < gic_irqs; i += 16)
+						writel_relaxed(GICD_INT_ACTLOW_LVLTRIG, base + GIC_DIST_CONFIG + i / 4);				//Set all global interrupts to be level triggered, active low.
+					for (i = 32; i < gic_irqs; i += 4)
+						writel_relaxed(GICD_INT_DEF_PRI_X4, base + GIC_DIST_PRI + i);							//Set priority on all global interrupts.每个SPI中断优先级都这只为0xa0，数字越低优先级越高，每个中断占用8个bit
+					for (i = 32; i < gic_irqs; i += 32) {														//停止并禁用所有spi中断(等申请时再使能)，IPI和PPI正常使用
+						writel_relaxed(GICD_INT_EN_CLR_X32,														//停用相应的中断。这些寄存器用于保存和恢复 GIC 状态
+								   base + GIC_DIST_ACTIVE_CLEAR + i / 8);
+						writel_relaxed(GICD_INT_EN_CLR_X32,														//禁止将相应的中断转发到 CPU 接口
+								   base + GIC_DIST_ENABLE_CLEAR + i / 8);
+					}
+***********		writel_relaxed(GICD_ENABLE, base + GIC_DIST_CTRL);												//使能中断分发器
+			gic_cpu_init(gic)																					//中断cpu interface初始化
+				cpu = smp_processor_id()																		//获取当前CPU的逻辑ID
+				gic_get_cpumask(gic)																			//获取当前CPU interface的mask
+				gic_cpu_config(dist_base, NULL)
+					writel_relaxed(GICD_INT_EN_CLR_X32, base + GIC_DIST_ACTIVE_CLEAR);
+					writel_relaxed(GICD_INT_EN_CLR_PPI, base + GIC_DIST_ENABLE_CLEAR);							//关PPI中断
+					writel_relaxed(GICD_INT_EN_SET_SGI, base + GIC_DIST_ENABLE_SET);							//开IPI中断
+					
+					for (i = 0; i < 32; i += 4)																	//IPI和PPI所有中断有限级也都设置为0xa0
+							writel_relaxed(GICD_INT_DEF_PRI_X4,
+										base + GIC_DIST_PRI + i * 4 / 4);
+				writel_relaxed(GICC_INT_PRI_THRESHOLD, base + GIC_CPU_PRIMASK)									//Interrupt Priority Mask Register，这个寄存器设定了一个中断优先级的值，只有中断优先级高过该值的中断请求才会被送到CPU上去
+***********		gic_cpu_if_up(gic)																				//设定CPU interface的control register。enable了group 0的中断，disable了group 1的中断，group 0的interrupt source触发IRQ中断（而不是FIQ中断）????
+			gic_pm_init(gic)																					//主要是分配两个per cpu的内存。这些内存在系统进入sleep状态的时候保存PPI的寄存器状态信息，在resume的时候，写回寄存器
+				cpu_pm_register_notifier(&gic_notifier_block)													//注册事件通知，如CPU状态发生变化(online，offline)，需要把时间通知到GIC，GIC驱动会对CPU interface进行相应的设定
+										
+	...
+	if (!gic_cnt) {
+		gic_init_physaddr(node);																				//对于不支持big.LITTLE switcher（CONFIG_BL_SWITCHER）的系统，该函数为空
+		gic_of_setup_kvm_info(node);
+	}
+	if (parent) {
+		//非root的GIC的初始化分成了两个部分：一部分是作为一个interrupt controller，执行和root GIC一样的初始化代码。
+		//另外一方面，GIC又作为一个普通的interrupt generating device，需要象一个普通的设备驱动一样，注册其中断handler
+		irq = irq_of_parse_and_map(node, 0);																	//解析second GIC的interrupts属性，并进行mapping，返回IRQ number
+		gic_cascade_irq(gic_cnt, irq);
+	}
+
+static const struct irq_domain_ops gic_irq_domain_hierarchy_ops = {
+	.translate = gic_irq_domain_translate,									//解析设备树中interrupts 3个cell的信息：分别是interrupt type（0 表示SPI，1表示PPI），interrupt number（对于PPI，范围是[0-15]，对于SPI，范围是[0-987]），interrupt flag（触发方式）
+	.alloc = gic_irq_domain_alloc,											//硬件中断和系统中断一一映射
+	.free = irq_domain_free_irqs_top,
+};
+
+
+static const struct irq_chip gic_chip = {
+	.irq_mask		= gic_mask_irq,											//屏蔽某个中断，使Distributor不再forward该interrupt
+	.irq_unmask		= gic_unmask_irq,
+	.irq_eoi		= gic_eoi_irq,
+	.irq_set_type		= gic_set_type,										//设置中断触发类型
+	.irq_get_irqchip_state	= gic_irq_get_irqchip_state,
+	.irq_set_irqchip_state	= gic_irq_set_irqchip_state,
+	.flags			= IRQCHIP_SET_TYPE_MASKED |
+				  IRQCHIP_SKIP_SET_WAKE |
+				  IRQCHIP_MASK_ON_SUSPEND,
+};
+
+非BSP核启动： 唤醒的核运行的线程调用
+[    0.112655]  dump_backtrace+0x0/0x168
+[    0.112662]  show_stack+0x14/0x20
+[    0.112670]  dump_stack+0xa8/0xcc
+[    0.112676]  gic_get_cpumask.isra.4+0x28/0xb0
+[    0.112681]  gic_cpu_init+0x94/0x110
+[    0.112685]  gic_starting_cpu+0x14/0x20
+[    0.112693]  cpuhp_invoke_callback+0x84/0x248
+[    0.112697]  notify_cpu_starting+0x70/0xa8
+[    0.112704]  secondary_start_kernel+0x11c/0x1c8
+==============================================================================================================
+其他驱动中断申请：
+
+设备树展开时：
+of_platform_populate
+	for_each_child_of_node
+		of_platform_bus_create
+			of_platform_device_create_pdata
+				of_device_is_available
+					of_device_alloc																				//在此函数中解析寄存器、中断等信息；
+						num_irq = of_irq_count(np);																//得到该设备树节点里的中断号个数
+							of_irq_parse_one(dev, nr, &irq)
+								res = of_parse_phandle_with_args(device, "interrupts-extended", "#interrupt-cells", index, out_irq)	//得到该phandle指向的节点和该phandle后面的参数
+									__of_parse_phandle_with_args(np, list_name, cells_name, 0, index, out_args)
+										of_for_each_phandle(&it, rc, np, list_name, cells_name, cell_count)
+											if (cur_index == index)												//确定index
+												of_phandle_iterator_args(&it, out_args->args, MAX_PHANDLE_ARGS)	//获取phandle的参数，依据#interrupt-cells获取个数，888
+												out_args->np = it.node											//获取phandle指向的节点,888
+												out_args->args_count = c										//获取phandle的参数个数
+								of_irq_parse_raw(addr, out_irq)													//主要是确认phandle指向的节点是否是"interrupt-controller",是就退出，不是找parent,实际需要的参数还是phandle的直接和参数
+						of_irq_to_resource_table(np, res, num_irq)
+							of_irq_to_resource(dev, i, res)
+								irq = of_irq_get(dev, index)
+
+								domain = irq_find_host(oirq.np)													//根据中断控制器的节点确认已经有domain
+								irq_create_of_mapping(&oirq)													//创建linux irq和硬件irq的map关系
+									irq_create_fwspec_mapping(&fwspec)
+										domain = irq_find_matching_fwspec(fwspec, DOMAIN_BUS_ANY);				//找到中断控制器的domain
+										irq_domain_translate(domain, fwspec, &hwirq, &type)
+											d->ops->translate(d, fwspec, hwirq, type)
+												gic_irq_domain_translate(d, fwspec, hwirq, type)				//返回硬件中断号hwirq：dts指定的+32，获取中断类型type
+										virq = irq_find_mapping(domain, hwirq);									//确认linux对应的中断号是否存在
+										if (irq_domain_is_hierarchy(domain))									//gicv2设置该flags
+											virq = irq_domain_alloc_irqs(domain, 1, NUMA_NO_NODE, fwspec);
+												 __irq_domain_alloc_irqs(domain, -1, nr_irqs, node, arg, false, NULL)
+													virq = irq_domain_alloc_descs(irq_base, nr_irqs, 0, node, affinity)		//(allocate specified IRQ number if irq_base >= 0)根据中断个数、中断控制器节点、亲和性，申请linux中断号
+														virq = __irq_alloc_descs(-1, hint, cnt, node, THIS_MODULE, affinity)
+															start = bitmap_find_next_zero_area(allocated_irqs, IRQ_BITMAP_BITS, from, cnt, 0)	//用bitmap的方式找到从from开始cnt个空白的0的位置，即linux中断号
+															alloc_descs(start, cnt, node, affinity, owner);
+																desc = alloc_desc(start + i, node, flags, mask, owner);		//申请、填充struct irq_desc信息
+													irq_domain_alloc_irqs_hierarchy(domain, virq, nr_irqs, arg)
+														domain->ops->alloc(domain, irq_base, nr_irqs, arg)
+															gic_irq_domain_alloc(domain, irq_base, nr_irqs, arg)
+																gic_irq_domain_translate(domain, fwspec, &hwirq, &type)		//通过dts的中断信息得到物理中断号和触发类型
+																for (i = 0; i < nr_irqs; i++)
+																	gic_irq_domain_map(domain, virq + i, hwirq + i)
+																		irq_domain_set_info(d, irq, hw, &gic->chip, d->host_data, handle_percpu_devid_irq, NULL, NULL)	// 888 PPI中断的handler
+																		irq_domain_set_info(d, irq, hw, &gic->chip, d->host_data, handle_fasteoi_irq, NULL, NULL)		//spi中断handler
+																			irq_domain_set_hwirq_and_chip(domain, virq, hwirq, chip, chip_data)		//硬件中断号和linux中断号关联起来
+																			__irq_set_handler(virq, handle_fasteoi_irq, 0, handler_name)			// 888 实际驱动中断在probe之前(硬件中断转换为软件中断时)就设置了handle,这个handle会做些通用的事情(记录中断次数，是否正常处理等)，再调用驱动中注册的handle处理真正的中断事件
+													irq_domain_insert_irq(int virq)
+														irq_domain_set_mapping(domain, data->hwirq, data)
+															domain->linear_revmap[hwirq] = irq_data->irq					//linux中断号保存在linear_revmap数组中
+								...
+								r->start = r->end = irq;														//将linux中断号保存到struct resource结构体中
+
+
+
+
+
+具体驱动获取中断号：
+irqdrv->irq = platform_get_irq(pdev, 1)
+	r = platform_get_resource(dev, IORESOURCE_IRQ, num)															//获取对应index的struct resource结构体
+	if (r)
+		return r->start																							//返回linux中断号
+
+==============================================================================================================
+中断触发流程：
+
+
+
+
+gic_handle_irq()
+	irqstat = readl_relaxed(cpu_base + GIC_CPU_INTACK);															//读中断控制寄存器,应答中断并获取硬件中断号；获取中断号的同时硬件状态从pending切到active,在arm64中arm core硬件将关闭此cpu核的中断(All of PSTATE.{D, A, I, F} are set to 1. See Process state, PSTATE on page D1-1434.)
+	irqnr = irqstat & GICC_IAR_INT_ID_MASK
+	if (static_branch_likely(&supports_deactivate_key))
+		writel_relaxed(irqstat, cpu_base + GIC_CPU_EOI);														//写EOI第一步：ICC_EOIR1_EL1
+	handle_domain_irq(gic->domain, irqnr, regs);
+		__handle_domain_irq(domain, hwirq, true, regs)
+			irq_enter();
+			...
+			generic_handle_irq(irq)
+				irq_desc *desc = irq_to_desc(irq)																//获取硬件中断对应的struct irq_desc数据
+				generic_handle_irq_desc(desc);
+					desc->handle_irq(desc) ==> sunxi_pinctrl_irq_handler(desc)									//相对中断控制器的handler
+						generic_handle_irq(pin_irq)
+							irq_desc *pin_desc = irq_to_desc(pin_irq)
+							handle_edge_irq(pin_desc)	*****************************************************	//相对GPIO控制器的中断
+								raw_spin_lock(&desc->lock);														// 888 此时改核上的中断是关闭的，不会接收到其他中断；但若改中断又触发并给了其他CPU，仍会走到这处理，所以加个自旋锁互斥
+								desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);									//IRQS_REPLAY：在check_irq_resend函数中设置，运行到这表示已经开始处理中断不需要重发中断了；IRQS_WAITING： irq is waiting
+								if (!irq_may_run(desc))															//确认改中断源是否在其他核上运行，如是设置Pending后则屏蔽该中断源后退出
+									desc->istate |= IRQS_PENDING;
+									mask_ack_irq(desc);
+								if (irqd_irq_disabled(&desc->irq_data) || !desc->action)						//确认改中断源是否被警用或者有没action，如是设置Pending后则屏蔽该中断源后退出
+									desc->istate |= IRQS_PENDING;
+									mask_ack_irq(desc);
+								desc->irq_data.chip->irq_ack(&desc->irq_data);									//一般边沿触发是二级GPIO中断控制器,读GPIO中断源的时候没有ack，所以这里ack下
+								do {
+									...
+									handle_irq_event(desc);
+										desc->istate &= ~IRQS_PENDING;											//清pending
+										irqd_set(&desc->irq_data, IRQD_IRQ_INPROGRESS);							//设置处理中的状态
+										raw_spin_unlock(&desc->lock);											//linux的机制保证了同一中断源不会在不同的cpu上同时运行，真正中断处理函数可以不用上锁，1是可能耗时，2是让其他cpu可以尽早ack gic再软件上锁存等待处理中断源的cpu处理
+										
+										handle_irq_event_percpu(desc)											//改函数可能耗时，避免持有自旋锁
+										
+										raw_spin_lock(&desc->lock);
+											__handle_irq_event_percpu(desc, &flags)
+												action->handler(irq, action->dev_id)							//真正的中断处理函数 888
+												__irq_wake_thread(desc, action)									//如果线程化，唤醒中断线程
+													wake_up_process(action->thread)
+										if (!noirqdebug)														//在cmdline中增加“noirqdebug”即不会往下走
+											note_interrupt(desc, retval)
+												if (unlikely(action_ret == IRQ_NONE))
+													if (time_after(jiffies, desc->last_unhandled + HZ/10))
+														desc->irqs_unhandled = 1;
+													else
+														desc->irqs_unhandled++									//如驱动中断处理函数返回IRQ_NONE便++
+												if (unlikely(desc->irqs_unhandled > 99900))						//次数99900则会disable此中断
+													irq_disable(desc);
+									...
+								while ((desc->istate & IRQS_PENDING) && !irqd_irq_disabled(&desc->irq_data));	//处理完后发现中断源还是Pending，说明在处理过程中有触发了中断被其他核设置为pending的
+								...
+														*****************************************************
+					chained_irq_exit(chip, desc)
+						chip->irq_eoi(&desc->irq_data)															//写EOI第二步：GIC_CPU_DEACTIVATE
+
+
+
+
+							handle_fasteoi_irq()																//SPI中断类型desc->handle
+								...
+								handle_irq_event()
+								...
+								cond_unmask_eoi_irq(desc, chip)													//写EOI第二步：GIC_CPU_DEACTIVATE;active切到inactive或Active and pending,该cpu的中断将重新打开
+	
+			irq_exit();
+	
+	if (irqnr < 16)
+		handle_IPI(irqnr, regs)																					//arch\arm64\kernel\smp.c
+			switch (ipinr) {
+			case IPI_RESCHEDULE:
+				scheduler_ipi();
+				break;
+
+			case IPI_CALL_FUNC:
+				irq_enter();
+				generic_smp_call_function_interrupt();
+				irq_exit();
+				break;
+
+			case IPI_CPU_STOP:
+				irq_enter();
+				ipi_cpu_stop(cpu);
+				irq_exit();
+				break;
+
+			case IPI_CPU_CRASH_STOP:
+				if (IS_ENABLED(CONFIG_KEXEC_CORE)) {
+					irq_enter();
+					ipi_cpu_crash_stop(cpu, regs);
+
+					unreachable();
+				}
+				break;
+
+			case IPI_TIMER:
+				irq_enter();
+				tick_receive_broadcast();
+				irq_exit();
+				break;
+
+			case IPI_IRQ_WORK:
+				irq_enter();
+				irq_work_run();
+				irq_exit();
+				break;
+
+		#ifdef CONFIG_ARM64_ACPI_PARKING_PROTOCOL
+			case IPI_WAKEUP:																					//一般arm平台没有acpi
+				WARN_ONCE(!acpi_parking_protocol_valid(cpu),
+					  "CPU%u: Wake-up IPI outside the ACPI parking protocol\n",
+					  cpu);
+				break;
+		#endif
+
+			default:
+				pr_crit("CPU%u: Unknown IPI message 0x%x\n", cpu, ipinr);
+				break;
+			}
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,75 @@
+
+1、daif都是异步异常，系统调用(SVC)则是同步异常，不需要区分中断上下文，也不需要禁止本cpu中断；
+2、系统调用时处理保存cpu的全部状态，还会有其他的HW状态如FPU的寄存器状态，因为保存恢复浮点寄存器的状态消耗不如它带来的浮点加速，
+  所以内核一般不用硬件浮点
+
+
+注：
+	系统调用前用的sp_el0的栈(该线程的)，调用后用的sp_el1的栈(内核的，向下生长)，sp_el0的数据会入到内核栈中保存；切会保存在task_struc中，跟随调度切换；
+
+===========================================================================================
+
+libc:
+	http://ftp.gnu.org/gnu/glibc/glibc-2.36.tar.gz
+
+
+
+fd = open("/dev/driverTest", O_RDWR);																//weak_alias (__libc_open, open)
+	__libc_open (const char *file, int oflag, ...)
+		SYSCALL_CANCEL (openat, AT_FDCWD, file, oflag, mode)										//glibc-2.36\sysdeps\unix\sysv\linux\open.c
+			INLINE_SYSCALL_CALL (__VA_ARGS__)
+				__INLINE_SYSCALL_DISP (__INLINE_SYSCALL, __VA_ARGS__)
+					__SYSCALL_CONCAT (b,__INLINE_SYSCALL_NARGS(__VA_ARGS__))(__VA_ARGS__)
+						INTERNAL_SYSCALL_RAW (__INLINE_SYSCALL+__INLINE_SYSCALL_NARGS(__VA_ARGS__))	//glibc-2.36\sysdeps\unix\sysv\linux\aarch64\sysdep.h
+							asm volatile ("svc	0	// syscall " # name : "=r" (_x0) : "r"(_x8) ASM_ARGS_##nr : "memory");
+
+
+
+===========================================================================================
+
+#define SYSCALL_DEFINE3(name, ...) SYSCALL_DEFINEx(3, _##name, __VA_ARGS__)
+#define SYSCALL_DEFINEx(x, sname, ...)				\
+	SYSCALL_METADATA(sname, x, __VA_ARGS__)			\
+	__SYSCALL_DEFINEx(x, sname, __VA_ARGS__)
+
+==> __arm64_sys_openat
+
+
+ENTRY(vectors)
+	kernel_ventry	0, sync				// Synchronous 64-bit EL0
+	el0_sync
+		kernel_entry 0					//保存现场x0~x29、spsr、lr等
+		b.eq	el0_svc
+			el0_svc_handler
+				el0_svc_common(regs, regs->regs[8], __NR_syscalls, sys_call_table);
+					local_daif_restore(DAIF_PROCCTX)												//打开daif
+						invoke_syscall(regs, scno, sc_nr, syscall_table)							//系统调用总表syscall_table
+							syscall_fn = syscall_table[array_index_nospec(scno, sc_nr)]
+							syscall_fn(regs)==> __arm64_sys_openat
+								
+								SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
+									do_sys_open(AT_FDCWD, filename, flags, mode)
+										do_filp_open(dfd, tmp, &op)
+											path_openat(&nd, op, flags | LOOKUP_RCU)
+												do_last(nd, file, op))
+													vfs_open(&nd->path, file)
+														do_dentry_open(file, d_backing_inode(path->dentry), NULL)
+															open = f->f_op->open
+															open(inode, f)
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

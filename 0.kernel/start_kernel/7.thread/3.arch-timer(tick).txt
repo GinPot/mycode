@@ -1,0 +1,376 @@
+
+1、原子秒： 铯133原子在能量跃迁时辐射的电磁波的振荡频率;
+2、TAI(International Atomic Time)clock:原子秒延展出来的时间轴,精准;
+3、GMT： 基于地球自转，公转周期的时间，符合人类习惯，但是又不够精确；
+4、UTC(Coordinated Universal Time)：TAI clock的基因（使用原子秒），但是又会适当的调整（leap second），满足人类生产和生活的需要;精准的根据原子频率定义的那个秒来推动钟表的秒针的转动,有一个调节器，在适当的时间，可以把秒针向前或者向后调整一秒来符合人类习惯；
+	TAI clock和UTC clock在1972年进行了对准（相差10秒），此后就各自独立运行了。在大部分的时间里，UTC clock跟随TAI clock，除了在适当的时间点，realtime clock会进行leap second的补偿。
+	从1972年到2017年，已经有了27次leap second，因此TAI clock的读数已经比realtime clock（UTC时间）快了37秒；
+	
+5、NTP(Network Time Protocol): 时间同步（不会有间断点，NTP调整的是local oscillator和上游服务器频率误差而已）
+6、Linux epoch: 定义为1970-01-01 00:00:00 +0000 (UTC); C语言重写的Unix在1971年发布，为了表明每个文件创建的时间，又为了时间统计，用Linux epoch作为文件创建的时间，在32位系统上只够用68年，在2038年01月19日03时14分07秒会发生翻转，但64位的机器上够用292,277,026,596年12月4日15时30分08秒...
+
+
+应用层时间获取： 最近的那个Tick对应的时间采样点值再加上一个当前时间点到上一个tick的delta值就精准的定位了当前时间；
+	1、time和stime： 秒级别的时间函数，依赖内核中timekeeper模块；					#include <time.h>
+	2、gettimeofday和settimeofday： 微秒级别的时间函数，依赖内核中timekeeper模块；	#include <sys/time.h>
+	3、clock_gettime和clock_settime： 纳秒级别的时间函数，可以指定系统时钟模块；		#include <time.h>
+
+
+CLOCK_REALTIME： 离linux epoch(1970-01-01 00:00:00)过了多长时间,可以产生断点的方式修改时间，也可以通过NTP修改；
+CLOCK_MONOTONIC： 离开机启动过了多长时间，只能通过NTP对时钟进行调整，不会有时间断电，保证了时钟的单调性；
+CLOCK_MONOTONIC_RAW： 离开机启动过了多长时间，CLOCK_MONOTONIC的特性，但没有NTP调整；
+CLOCK_BOOTTIME： 离开机启动过了多长时间，在系统 suspend 的时候该时钟依然增长；
+CLOCK_PROCESS_CPUTIME_ID(2)、CLOCK_THREAD_CPUTIME_ID(3)： 用来计算进程或者线程的执行时间的（用于性能剖析），一旦进程（线程）被切换出去，那么该进程（线程）的clock就会停下
+
+timekeeping模块维护以上时间，并想其他模块提供服务; 基于clocksource模块和tick模块: 通过tick模块的tick事件，可以周期性的更新time line，通过clocksource模块、可以获取tick之间更精准的时间信息
+
+===============================================================================================
+
+HZ: 固定周期发生的时钟中断数量；
+CONFIG_HZ_250=y
+CONFIG_HZ=250
+表示1秒内发送250次时钟中断，每次4ms
+
+arch\arm64\kernel\vmlinux.lds.S
+jiffies = jiffies_64;
+jiffies的地址指向jiffies_64，完全等价，都是64bit；
+32位机器上，jiffies和jiffies_64的低4个字节是一样的；用get_jiffies_64()获取jiffies_64(分2次读，不是原子操作，增加了lock); 64位机器上get_jiffies_64()和jiffies_64是一样的
+
+unsigned long jiffies/jiffies_64： 全局变量jiffies记录系统自从启动以来的滴答数,初始值设为INITIAL_JIFFIES=((unsigned long)(unsigned int) (-300*HZ))=-75000=4294892296(无符号)
+	默认设置-5分钟，在32位系统中开机5分钟发生32位的jiffies 回绕，么做有利于及早暴露设备驱动程序中可能的 jiffies 回绕导致的逻辑错误，方便驱动程序发现错误； 64位的jiffies_64数足够大，基本不会发生溢出,但也沿用了之前的初始值
+	HZ=1000，jiffies只需要约49.7天就会产生回绕，jiffies_64可以运行几亿年也不会发生回绕
+jiffies/HZ： 可以表示系统启动的时间，单位s秒
+
+===============================================================================================
+
+1、其他核up时timer的调用；
+2、timer的中断处理；
+
+1、system counter和processor工作在不同的clock domain下，软件修改了CPU的频率也不会影响system counter的工作节奏，从而也不会改变timer的行为
+2、linux的时间子系统需要两种时间相关的硬件：
+	1、free running的counter（system counter），抽象为clock source device；提供了一个基础的timeline
+	2、能够产生中断的能力的timer（per cpu timer），抽象为clock event device；
+		clock source是一个time line，那么clock event是在timeline上指定的点产生clock event的设备
+
+clockevent
+clocksource
+
+
+
+tick device(滴答设备)有两种模式： 
+	1、周期性tick模式(周期触发模式)，一般初始化时是这个模式，后面切到2模式
+	2、one shot模式(精度高)： 每次中断到期后都要设置下一次的超时间隔；无固定周期的tick(tickless):把timer这只最近一次需要timer的间隔，到期后除中断处理外，还需要scan所有timer，找到最近要超期的timer，将其时间值设定到实际的HW timer中
+
+1、第一次配置tick device时会先设置为TICKDEV_MODE_PERIODIC，即便有one shot模式能力；反正是需要从周期性的tick开始；
+2、HW Timer的中断会注册soft irq，根据情况切到高精度模式，并且到one shot
+
+
+
+
+
+
+swapper进程即0号进程
+========================================================================================================
+
+timer {
+	compatible = "arm,armv8-timer";
+	interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,		//ARCH_TIMER_PHYS_SECURE_PPI，Secure Physical Timer event
+		     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,			//ARCH_TIMER_PHYS_NONSECURE_PPI，Non-secure Physical Timer event
+		     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,			//ARCH_TIMER_VIRT_PPI，Virtual Timer event
+		     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>;			//ARCH_TIMER_HYP_PPI，Hypervisor Timer event
+};
+ARM generic timer：
+	通过CP15 type的timer访问，效率比mmio方式高；
+	但这种方式不能控制system level的counter硬件部分；
+
+
+timer@1c20c00 {
+	compatible = "allwinner,sun4i-a10-timer";
+	reg = <0x01c20c00 0xa0>;
+	interrupts = <GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 19 IRQ_TYPE_LEVEL_HIGH>;
+	clocks = <&osc24M>;
+};
+平台相关的timer节点，一般没用？
+通过memory mapped register的方式来访问ARM generic timer的所有硬件block（包括system counter和per cpu的timer）；
+
+以上2中都能正常完成对ARM generic timer的控制。
+
+
+
+================================================================================================================================================================================================================
+
+TIMER_OF_DECLARE 主要是填充下面结构体并存放在特殊的section中(__timer_of_table)：
+struct of_device_id
+{
+    char    name[32];－－－－－－要匹配的device node的名字
+    char    type[32];－－－－－－－要匹配的device node的类型
+    char    compatible[128];－－－匹配字符串（DT compatible string），用来匹配适合的device node
+    const void *data;－－－－－－－－对于GIC，这里是初始化函数指针
+};
+
+
+
+
+
+
+start_kernel()
+	time_init()																									//./arch/arm64/kernel/time.c
+		of_clk_init(NULL)																						//ccu初始化
+		timer_probe();																							//./drivers/clocksource/timer-probe.c
+			for_each_matching_node_and_match(np, __timer_of_table, &match)
+				match->data(np)
+				arch_timer_of_init
+		...
+		arch_timer_rate = arch_timer_get_rate()
+		lpj_fine = arch_timer_rate / HZ																			// 96000 = 24 000 000/250, 用于calibrate_delay()中计算Bogo MIPS
+
+
+
+
+TIMER_OF_DECLARE(armv8_arch_timer, "arm,armv8-timer", arch_timer_of_init);
+	...
+	rate = arch_timer_get_cntfrq()																				//读取p15协处理器获取确定system counter的输入clock频率
+	...
+	if (!arch_timer_ppi[arch_timer_uses_ppi])																	//一般情况下选取 ARCH_TIMER_PHYS_NONSECURE_PPI CPU私有外设作为中断  14+16=30 ：   3:       2699       1442       1893       1703     GICv2  30 Level     arch_timer
+	...
+	arch_timer_register()
+		arch_timer_evt = alloc_percpu(struct clock_event_device)												//struct clock_event_device是对一个能够触发timer event的设备进行抽象。对于ARM generic timer而言，每个CPU都有一个timer硬件block，就是一个clock event device。
+		...
+		case ARCH_TIMER_PHYS_NONSECURE_PPI
+			request_percpu_irq(ppi, arch_timer_handler_phys, "arch_timer", arch_timer_evt)						//为每个CPU注册中断处理函数
+		...
+		cpuhp_setup_state(CPUHP_AP_ARM_ARCH_TIMER_STARTING, "clockevents/arm/arch_timer:starting", arch_timer_starting_cpu, arch_timer_dying_cpu)
+			arch_timer_starting_cpu																				//第一个cpu先运行，后续up其他核也会陆续运行
+				__arch_timer_setup(ARCH_TIMER_TYPE_CP15, clk)													//初始化clock event device并注册到系统
+					clockevents_config_and_register(clk, arch_timer_rate, 0xf, 0x7fffffff)
+						clockevents_register_device(dev)
+							tick_check_new_device(dev)															//最终会根据具体cpu配置中断处理handler
+								tick_check_percpu(curdev, newdev, cpu)											//确定注册的clock event device是服务当前CPU的
+								tick_check_preferred(curdev, newdev)											//新的clock event device没有one shot能力而原配有，新欢失败。如果都没有one shot的能力，那么要看看当前系统是否启用了高精度timer或者tickless(比较rating)
+								try_module_get(newdev->owner)													//增加新设备的reference count
+								...
+								tick_setup_device(td, newdev, cpu, cpumask_of(cpu))
+									if (!td->evtdev)
+										if (tick_do_timer_cpu == TICK_DO_TIMER_BOOT)							//如果该tick device是第一次设定，且目前系统中没有global tick设备，那么可以考虑选择该tick设备作为global设备，进行系统时间和jiffies的更新
+										...
+										td->mode = TICKDEV_MODE_PERIODIC										//默认设置为周期性的tick，后续适当条件下是可以切到其他模式
+									else
+										...
+										td->evtdev->event_handler = clockevents_handle_noop						//旧的clockevent设备就要退居二线了，将其handler修改为clockevents_handle_noop
+									...
+									if (td->mode == TICKDEV_MODE_PERIODIC)
+										tick_setup_periodic(newdev, 0);
+											tick_set_periodic_handler(dev, broadcast)							//设置PPI中断处理handler
+												dev->event_handler = tick_handle_periodic
+													tick_periodic(cpu)											//周期性tick中要处理的内容
+														if (tick_do_timer_cpu == cpu)							//global tick需要进行一些额外处理
+															...
+															do_timer(1)											//更新jiffies，计算平均负载
+															update_wall_time()									//更新wall time
+										...																		//若底层的clock event device不支持periodic模式，而tick device目前是周期性tick mode，那么要稍微复杂一些，需要用clock event device的one shot模式来实现周期性tick
+									else
+										tick_setup_oneshot(newdev, handler, next_event);
+				...
+				enable_percpu_irq(arch_timer_ppi[arch_timer_uses_ppi], flags)									//使能PPI中断
+	...
+	arch_timer_common_init()
+		arch_timer_banner(arch_timers_present)																	//只是打印输出ARM generic timer相关信息到控制台
+		arch_counter_register(arch_timers_present)																//向linux kernel时间子系统注册clock source、timer counter、shed clock设备
+			clocksource_register_hz(&clocksource_counter, arch_timer_rate)										//向系统注册一个clock soure（也就是一个free running的counter），并给出counter的工作频率作为传入的参数。linux时间子系统的clock source模块会根据counter的工作频率设定struct clocksource的各个成员，例如mult和shitf等
+				__clocksource_update_freq_scale(cs, scale, freq)												//计算mult/shift and max_idle_ns
+				clocksource_enqueue(cs)																			//按照rating的顺序插入到全局clock source list中
+				...
+				clocksource_select()																			//选择一个合适的clock source。kernel当然是选用一个rating最高的clocksource作为当前的正在使用的那个clock source。当注册一个新的clock source的时候当然要调用clocksource_select，毕竟有可能注册了一个精度更高的clock source
+			timecounter_init(&arch_timer_kvm_info.timecounter, &cyclecounter, start_count)						//clocksource模块是为timekeeping模块提供服务的，但是其他的驱动模块也有一些计时需求，这时候可以考虑使用timercounter。ARM generic timer静态定义了一个timercounter的全局变量，其他模块可以通过arch_timer_get_timecounter获取timercounter，并可以调用timecounter_read获取一个纳秒值
+			sched_clock_register(arch_timer_read_counter, 56, arch_timer_rate)									//基于1个小时的max_idle_ns计算，没明白用处
+		arch_timer_arch_init()																					//主要注册delay timer(忙等待那种)
+
+========================================================================================================
+clocksource：
+
+static struct clocksource clocksource_counter = {
+	.name	= "arch_sys_counter",
+	.rating	= 400,														//时钟源的精度等级，数字越大精度越高
+	.read	= arch_counter_read,										//读取当前counter的值
+	.mask	= CLOCKSOURCE_MASK(56),
+	.flags	= CLOCK_SOURCE_IS_CONTINUOUS,
+};
+
+mult和shift：
+	通过read获取当前的counter value，这个计数值是基于cycle的（数据类型是cycle_t，U64），最好转换成ns：
+	A个cycles数转换成纳秒：
+	纳秒数目 = (A / Fre) * NSEC_PER_SEC = A / 24 000 000 s * 1000 000 000
+	为了优化除法，引入mult和shift，会牺牲一些精度：
+	clocksource_cyc2ns = ((u64) cycles * mult) >> shift;
+
+
+max_idle_ns：
+	cycles * mult结果可能会超出64bit而溢出，max_idle_ns保证计算时不会溢出的最大纳秒数；
+	idle，因为kernel运行NO_HZ,这时系统没有周期的tick，由于cycles转换ns的溢出限制，idle的时间不会超过max_idle_ns
+	为了安全，该值实际上还缩小了50%(移位操作>>1)
+maxadj:
+	为防止cycles * mult溢出，限制mult的最大值，即为maxadj
+
+max_cycles：
+	最大idle纳秒数max_idle_ns*2转换为cycles即为max_cycles
+
+================================================================================================================================================================================================================
+
+
+cpuhp_setup_state(CPUHP_AP_ARM_ARCH_TIMER_STARTING, "clockevents/arm/arch_timer:starting", arch_timer_starting_cpu, arch_timer_dying_cpu)
+	__cpuhp_setup_state(state, name, true, startup, teardown, false)
+		__cpuhp_setup_state_cpuslocked(state, name, invoke, startup, teardown, multi_instance)
+			cpuhp_store_callbacks(state, name, startup, teardown, multi_instance)								//将回调函数存放在cpuhp_hp_states[CPUHP_AP_ARM_ARCH_TIMER_STARTING]结构体中
+				sp->startup.single = startup
+				sp->teardown.single = teardown
+			...
+			for_each_present_cpu(cpu)																			//根据当前cpu调用上面存放的回调函数
+				cpuhp_invoke_ap_callback(cpu, state, bringup, node)
+					cpuhp_invoke_callback(cpu, state, bringup, node, NULL)
+						step->startup.single(cpu)
+
+BSP核启动
+[    0.000000] Call trace:
+[    0.000000]  dump_backtrace+0x0/0x168
+[    0.000000]  show_stack+0x14/0x20
+[    0.000000]  dump_stack+0xa8/0xcc
+[    0.000000]  arch_timer_starting_cpu+0x48/0x350
+[    0.000000]  cpuhp_invoke_callback+0x84/0x248
+[    0.000000]  cpuhp_issue_call+0x4c/0x158
+[    0.000000]  __cpuhp_setup_state_cpuslocked+0x128/0x2d0
+[    0.000000]  __cpuhp_setup_state+0x4c/0x70
+[    0.000000]  arch_timer_of_init+0x2bc/0x350
+[    0.000000]  timer_probe+0x74/0xec
+[    0.000000]  time_init+0x14/0x44
+[    0.000000]  start_kernel+0x2e4/0x46c
+
+
+非BSP核启动： 唤醒的核运行的线程调用
+[    0.081167] Call trace:
+[    0.081186]  dump_backtrace+0x0/0x168
+[    0.081195]  show_stack+0x14/0x20
+[    0.081205]  dump_stack+0xa8/0xcc
+[    0.081217]  arch_timer_starting_cpu+0x48/0x350
+[    0.081226]  cpuhp_invoke_callback+0x84/0x248
+[    0.081232]  notify_cpu_starting+0x70/0xa8
+[    0.081242]  secondary_start_kernel+0x11c/0x1c8
+
+================================================================================================================================================================================================================
+
+timer中断处理：
+handle_percpu_devid_irq()																						// 888 PPI中断的handler
+	arch_timer_handler_phys
+		timer_handler(ARCH_TIMER_PHYS_ACCESS, evt)
+			evt->event_handler(evt)==>tick_handle_periodic(evt)
+				tick_periodic(cpu)
+					if (tick_do_timer_cpu == cpu)																//global tick需要进行一些额外处理
+						...
+						do_timer(1)																				//更新jiffies，计算平均负载
+							jiffies_64 += ticks;
+							calc_global_load(ticks);
+								if (time_before(jiffies, sample_window + 10))									//判断是否到统计间隔5秒+10tick,10tick目的就是让所有cpu都更新完calc_load_tasks
+								delta = calc_load_nohz_fold()													//进入idle后tick被关闭，会导致cpus不会每5秒更新一次calc_load_tasks；可以通过函数 calc_load_nohz_read 获取当时 runnable 和 uninterruptible 的进程数量（CPU 进入 idle 后，这两种状态的进程数量将保持不变。如果 CPU 未 idle，则 calc_load_nohz_read 返回 0
+								active = atomic_long_read(&calc_load_tasks);									//获取活跃的进程：每个 CPU 每 5s 报告一次当前处于 runnable 和 uninterruptible 状态的进程数量，并记录到变量 calc_load_tasks，calc_global_load_tick()
+								active = active > 0 ? active * FIXED_1 : 0;										//扩大2048倍计算
+								avenrun[0] = calc_load(avenrun[0], EXP_1, active);								//指数平滑法计算
+								...
+								WRITE_ONCE(calc_load_update, sample_window + LOAD_FREQ);						//更新下次统计时间(增阿基5秒)
+								
+								calc_global_nohz();																//如果当前时间戳已经超过计算平均负载时间戳 （calc_load_update + 10）时，则说明进入过 CPU idle 且期间，至少有一次或者多次需要计算平均负载的时间戳，因此这里需要把这些错过的采样点补回来
+						
+						update_wall_time()																		//更新wall time, 更新系统时间
+						...
+					update_process_times(user_mode(get_irq_regs()))												// 888 更新和当前进程相关的内容； 入定时器中断的时候，会将spsr保存在栈里，pstate寄存器的低四位记录了从何处进入此异常的，用于判断当前进程是用户进程还是内核进程
+						account_process_tick(current, user_tick)												//由percpu cpu_usage_stat结构体，通过统计所有线程在各阶段运行的时间来同级cpu的使用情况，见下面具体分许：
+							cputime = TICK_NSEC;																//一个tick所需要的时间，单位ns；线程可能会被中断或其他线程抢占，计算这部分时间
+							cputime -= steal																	//减去窃走的时间
+						run_local_timers();												
+							hrtimer_run_queues()																//在为使用高精度时钟时，采用了在每一个系统时钟中断中轮循的方式来判断hrtimer是否到期，因此，这里的定时精度为时钟中断轮循的时间间隔
+								if (__hrtimer_hres_active(cpu_base))											//若启用了高精度会直接返回
+							raise_softirq(TIMER_SOFTIRQ)														//唤醒timer软中断处理定时器中断handler
+						rcu_sched_clock_irq(user_tick)															//检测是否有rcu相关任务唤醒相关进程，检测cpu stall
+						scheduler_tick()
+					
+					profile_tick(CPU_PROFILING)																	//性能相关
+					
+					
+
+
+
+
+
+============================================================
+top命令显示cpu使用情况：
+%Cpu(s):  0.1 us,  0.1 sy,  0.0 ni, 99.7 id,  0.0 wa,  0.1 hi,  0.0 si,  0.0 st
+	us：user time，表示 CPU 执行用户进程的时间，包括 nice 时间。通常都是希望用户空间CPU越高越好。
+	sy：system time，表示 CPU 在内核运行的时间，包括 IRQ 和 softirq。系统 CPU 占用越高，表明系统某部分存在瓶颈。通常这个值越低越好。
+	ni：nice time，具有优先级的用户进程执行时占用的 CPU 利用率百分比。
+	id：idle time，表示系统处于空闲期，等待进程运行。
+	wa：waiting time，表示 CPU 在等待 IO 操作完成所花费的时间。系统不应该花费大量的时间来等待 IO 操作，否则就说明 IO 存在瓶颈。
+	hi：hard IRQ time，表示系统处理硬中断所花费的时间。
+	si：soft IRQ time，表示系统处理软中断所花费的时间。
+	st：steal time，被强制等待（involuntary wait）虚拟 CPU 的时间，此时 Hypervisor 在为另一个虚拟处理器服务
+
+
+对应
+struct cpu_usage_stat {  
+    cputime64_t user;  
+    cputime64_t nice;  
+    cputime64_t system;  
+    cputime64_t softirq;  
+    cputime64_t irq;  
+    cputime64_t idle;  
+    cputime64_t iowait;  
+    cputime64_t steal;  
+    cputime64_t guest;  
+}; 
+
+cat /proc/stat  
+cpu  245 10 1142 1097923 95 0 28 0 0 0  
+cpu0 245 10 1142 1097923 95 0 28 0 0 0 
+
+top 命令的 CPU 使用率计算公式如下：
+	CPU总时间 = user + nice + system + idle + wait + irq + softirq + steal  
+	%us = user / CPU总时间  
+	%ni = nice / CPU总时间  
+	%sy = system / CPU总时间  
+	%id = idel / CPU总时间  
+	%wa = wait / CPU总时间  
+	%hi = irq / CPU总时间  
+	%si = softirq / CPU总时间  
+	%st = steal / CPU总时间 
+
+============================================================
+
+系统平均负载: 不是cpu使用率          https://blog.csdn.net/cs_tech/article/details/126563993
+top命令中的load average；
+uptime；
+cat /proc/loadavg；
+
+打印的信息分别表示：  1 分钟、5 分钟和 15 分钟的 系统平均负载：    load average: 0.15, 0.03, 0.01：
+
+单核情况下：
+当平均负载等于 1.0 时，表示 CPU 使用率最高，完全使用cpu
+当平均负载小于 1.0 时，表示 CPU 使用率处于空闲状态。
+当平均负载大于 1.0 时，表示 CPU 使用率已经超过负荷，有其他task等待cpu运行
+4 核 CPU 的系统中，当平均负载为 4.0 时，才表示 CPU 的使用率最高
+
+系统负载： 可运行状态进程数 + 不可中断休眠状态进程数(系统中当前正在运行的进程数量 )
+系统平均负载: 比如每 5 秒统计一次系统负载，1 分钟内会统计 12 次;后把每次统计到的系统负载加起来，再除以统计次数，即可得出 系统平均负载
+指数平滑法: 对新老数据进行加权，越老的数据权重越低;来优化越老的数据越不能反映现在的情况（load1 = load0 * e + active * (1 - e)）
+
+
+#define FIXED_1		(1<<FSHIFT)	/* 1.0 as fixed-point */					因不能进行浮点运行，将数据扩大2048倍计算，下面的系数都是扩大后的
+#define EXP_1		1884		/* 1/exp(5sec/1min) as fixed-point */
+#define EXP_5		2014		/* 1/exp(5sec/5min) */
+#define EXP_15		2037		/* 1/exp(5sec/15min) */
+
+
+
+
+
+
+
+
+

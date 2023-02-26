@@ -85,7 +85,7 @@ of_platform_populate(root, of_default_bus_match_table, lookup, parent)					//除
 							for (i = 0; psize >= onesize; psize -= onesize, prop += onesize, i++)
 								if (i == index) 
 									*size = of_read_number(prop + na, ns);				//取reg的size大小
-									*flags = bus->get_flags(prop);						//去reg默认的flag(IORESOURCE_MEM)
+									*flags = bus->get_flags(prop);						//取reg默认的flag(IORESOURCE_MEM)
 						of_property_read_string_index(dev, "reg-names",	index, &name)	//获取不必要的"reg-names"属性
 						__of_address_to_resource(dev, addrp, size, flags, name, r)
 							taddr = of_translate_address(dev, addrp)					//获取reg的地址值(dts中配置的物理地址), 在有ranges属性的节点中reg地址需要转换

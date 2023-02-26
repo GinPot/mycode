@@ -80,7 +80,6 @@ static ssize_t DriverTestRead(struct file *file, char __user *user_buf, size_t s
 static ssize_t DriverTestWrite(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos)
 {
 	char writebuf[100];
-
 	
 	if (copy_from_user(writebuf, user_buf, count)) {
 		pr_err("%s: failed to copy from user cfg_data.\n", __func__);
@@ -206,7 +205,7 @@ static char sysBuf[10]={0};
 static ssize_t DriverSysGetValue(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	kill_fasync(&fasync, SIGIO, POLL_IN);			//发生信号给进程
-	
+
 	return sprintf(buf, "%s", sysBuf);
 }
 
@@ -319,4 +318,135 @@ unlocked_ioctl替代ioctl原因：
 	用户在调用ioctl进入内核态时，原来的ioctl受到大内核锁的保护(多核的情况下只能单核运行ioctl)；unlocked_ioctl则直接运行，并发访问时需要驱动自己加锁
 
 
+
+
+
+root@localhost:~/mycode/1.driver/99.driver_test/app# size:12 write: write data.
+size:10 read: read buf.
+[ 2396.845135] DriverTestOpen: enter
+[ 2396.845158] CPU: 2 PID: 627 Comm: test Tainted: G           O      5.2.0 #58
+[ 2396.845162] Hardware name: GinPot H5 (DT)
+[ 2396.845166] Call trace:
+[ 2396.845187]  dump_backtrace+0x0/0x168
+[ 2396.845197]  show_stack+0x14/0x20
+read: ioctl read buf.
+[ 2396.845208]  dump_stack+0xa8/0xcc
+[ 2396.845221]  DriverTestOpen+0x30/0x80 [driver_test]
+[ 2396.845232]  chrdev_open+0xa4/0x1b8
+[ 2396.845239]  do_dentry_open+0x1bc/0x350
+[ 2396.845244]  vfs_open+0x28/0x30
+[ 2396.845254]  path_openat+0x4a4/0x11d8
+[ 2396.845262]  do_filp_open+0x78/0xf8
+[ 2396.845267]  do_sys_open+0x198/0x258
+[ 2396.845272]  __arm64_sys_openat+0x20/0x28
+[ 2396.845282]  el0_svc_common.constprop.0+0x64/0x160
+[ 2396.845290]  el0_svc_handler+0x28/0x78
+[ 2396.845296]  el0_svc+0x8/0xc
+[ 2396.845319] CPU: 2 PID: 627 Comm: test Tainted: G           O      5.2.0 #58
+[ 2396.845322] Hardware name: GinPot H5 (DT)
+[ 2396.845325] Call trace:
+[ 2396.845332]  dump_backtrace+0x0/0x168
+[ 2396.845340]  show_stack+0x14/0x20
+[ 2396.845347]  dump_stack+0xa8/0xcc
+[ 2396.845355]  DriverTestWrite+0x30/0x130 [driver_test]
+[ 2396.845361]  __vfs_write+0x18/0x38
+[ 2396.845368]  vfs_write+0xa4/0x1b0
+[ 2396.845374]  ksys_write+0x68/0xf8
+[ 2396.845379]  __arm64_sys_write+0x18/0x20
+[ 2396.845387]  el0_svc_common.constprop.0+0x64/0x160
+[ 2396.845394]  el0_svc_handler+0x28/0x78
+[ 2396.845399]  el0_svc+0x8/0xc
+[ 2396.845405] DriverTestWrite: size:12 writebuf, write data.
+[ 2396.845688] DriverTestRead: size:10 readbuf, read buf.
+[ 2396.845696] CPU: 2 PID: 627 Comm: test Tainted: G           O      5.2.0 #58
+[ 2396.845699] Hardware name: GinPot H5 (DT)
+[ 2396.845702] Call trace:
+[ 2396.845711]  dump_backtrace+0x0/0x168
+[ 2396.845718]  show_stack+0x14/0x20
+[ 2396.845726]  dump_stack+0xa8/0xcc
+[ 2396.845735]  DriverTestRead+0x64/0xf0 [driver_test]
+[ 2396.845742]  __vfs_read+0x18/0x38
+[ 2396.845747]  vfs_read+0x90/0x170
+[ 2396.845753]  ksys_read+0x68/0xf8
+[ 2396.845759]  __arm64_sys_read+0x18/0x20
+[ 2396.845767]  el0_svc_common.constprop.0+0x64/0x160
+[ 2396.845774]  el0_svc_handler+0x28/0x78
+[ 2396.845780]  el0_svc+0x8/0xc
+[ 2396.845809] DriverTestIoctl: enter
+[ 2396.845817] CPU: 2 PID: 627 Comm: test Tainted: G           O      5.2.0 #58
+[ 2396.845820] Hardware name: GinPot H5 (DT)
+[ 2396.845823] Call trace:
+[ 2396.845831]  dump_backtrace+0x0/0x168
+[ 2396.845838]  show_stack+0x14/0x20
+[ 2396.845845]  dump_stack+0xa8/0xcc
+[ 2396.845854]  DriverTestIoctl+0x60/0x210 [driver_test]
+[ 2396.845863]  do_vfs_ioctl+0xb8/0x8f8
+[ 2396.845870]  ksys_ioctl+0x80/0xb8
+[ 2396.845877]  __arm64_sys_ioctl+0x1c/0x28
+[ 2396.845885]  el0_svc_common.constprop.0+0x64/0x160
+[ 2396.845891]  el0_svc_handler+0x28/0x78
+[ 2396.845897]  el0_svc+0x8/0xc
+[ 2396.846024] hello, i am register!
+[ 2396.846032] DriverTestIoctl: enter
+[ 2396.846040] CPU: 2 PID: 627 Comm: test Tainted: G           O      5.2.0 #58
+[ 2396.846043] Hardware name: GinPot H5 (DT)
+[ 2396.846046] Call trace:
+[ 2396.846056]  dump_backtrace+0x0/0x168
+[ 2396.846068]  show_stack+0x14/0x20
+[ 2396.846075]  dump_stack+0xa8/0xcc
+[ 2396.846084]  DriverTestIoctl+0x60/0x210 [driver_test]
+[ 2396.846091]  do_vfs_ioctl+0xb8/0x8f8
+[ 2396.846099]  ksys_ioctl+0x80/0xb8
+[ 2396.846106]  __arm64_sys_ioctl+0x1c/0x28
+[ 2396.846113]  el0_svc_common.constprop.0+0x64/0x160
+[ 2396.846124]  el0_svc_handler+0x28/0x78
+[ 2396.846130]  el0_svc+0x8/0xc
+[ 2396.846134] DriverTestIoctl:  writebuf, write data.
+[ 2396.846164] DriverTestIoctl: enter
+[ 2396.846172] CPU: 2 PID: 627 Comm: test Tainted: G           O      5.2.0 #58
+[ 2396.846175] Hardware name: GinPot H5 (DT)
+[ 2396.846178] Call trace:
+[ 2396.846186]  dump_backtrace+0x0/0x168
+[ 2396.846197]  show_stack+0x14/0x20
+[ 2396.846204]  dump_stack+0xa8/0xcc
+[ 2396.846213]  DriverTestIoctl+0x60/0x210 [driver_test]
+[ 2396.846225]  do_vfs_ioctl+0xb8/0x8f8
+[ 2396.846237]  ksys_ioctl+0x80/0xb8
+[ 2396.846244]  __arm64_sys_ioctl+0x1c/0x28
+[ 2396.846255]  el0_svc_common.constprop.0+0x64/0x160
+[ 2396.846262]  el0_svc_handler+0x28/0x78
+[ 2396.846267]  el0_svc+0x8/0xc
+[ 2396.846338] DriverTestFasync: enter 
+   
+root@localhost:~/mycode/1.driver/99.driver_test/app# cat /sys/devices/virtual/driverClass/driverTest/syschar
+fasync:29.
+root@localhost:~/mycode/1.driver/99.driver_test/app# [ 2422.376951] CPU: 1 PID: 628 Comm: cat Tainted: G           O      5.2.0 #58
+[ 2422.376964] Hardware name: GinPot H5 (DT)
+[ 2422.376969] Call trace:
+[ 2422.376992]  dump_backtrace+0x0/0x168
+[ 2422.377001]  show_stack+0x14/0x20
+[ 2422.377014]  dump_stack+0xa8/0xcc
+[ 2422.377027]  DriverSysGetValue+0x2c/0x50 [driver_test]
+[ 2422.377042]  dev_attr_show+0x20/0x60
+[ 2422.377053]  sysfs_kf_seq_show+0xbc/0x148
+[ 2422.377059]  kernfs_seq_show+0x28/0x30
+[ 2422.377069]  seq_read+0xcc/0x468
+[ 2422.377075]  kernfs_fop_read+0x130/0x1d0
+[ 2422.377083]  __vfs_read+0x18/0x38
+[ 2422.377090]  vfs_read+0x90/0x170
+[ 2422.377095]  ksys_read+0x68/0xf8
+[ 2422.377101]  __arm64_sys_read+0x18/0x20
+[ 2422.377112]  el0_svc_common.constprop.0+0x64/0x160
+[ 2422.377119]  el0_svc_handler+0x28/0x78
+[ 2422.377125]  el0_svc+0x8/0xc
+
+
+
+
 */
+
+
+
+
+
+

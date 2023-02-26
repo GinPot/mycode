@@ -1,0 +1,224 @@
+1、线程切换过程；					OK
+2、调度器选择合适线程过程；
+3、调度/抢占的场景
+	调度： 因等待资源主动挂起；
+	
+	抢占：
+		1、时间片用完；
+		2、中断唤醒其他优先级更高的进程；
+		3、其他进程唤醒其他优先级更高的进程；
+		4、创建新进程或修改进程优先级；
+		注1： 都是先设置 task_struct->thread_info->flags=TIF_NEED_RESCHED,然后等待调度点来临；
+	能否抢占： task_struct->thread_info->preempt_count=0时才允许抢占；
+	调度点(抢占时机)：
+	
+4、idle/内核初始化、运行调度器过程
+5、线程statu迁移含义，如TASK_RUNNING、TASK_INTERRUPTIBLE等
+
+__schedule()
+	1、调用该函数之前需要关闭抢占；关抢占之前需要确定preempt_count为0，非0可能是：显示禁止抢占、在中断上下文、spinlock上下文等，不能调度
+
+
+
+
+
+
+进程切换：
+	1、地址空间寄存器(ttbr0_el1,ttbr1_el1);
+	2、通用寄存器；
+	3、浮点寄存器；
+	4、其他寄存器(ASID、thread process ID register等);
+
+ARM64标准过程调用文档：
+	x19～x28是属于callee-saved registers：被调用的函数需要保证该函数被调用前后这几寄存器值一样，同样需要一样的还有pc、sp、fp
+
+===========================================================================================================
+
+preempt_enable()											/include/linux/preempt.h, 使能过程中发现preempt_count为0就抢占调度
+	if (unlikely(preempt_count_dec_and_test()))
+		__preempt_schedule() ==> preempt_schedule()
+			if (likely(!preemptible()))						//如果preempt_count非0,则直接返回，可以嵌套，所以可能仍不能抢占
+				return;
+			preempt_schedule_common()
+				do {
+					preempt_disable_notrace()				//禁止抢占
+					preempt_latency_start(1);				//没有什么操作
+					__schedule(true);						// 888 ,传参true表示此次是抢占调度，false表示非抢占调度(主动调度)
+					preempt_latency_stop(1);
+					preempt_enable_no_resched_notrace()		//使能抢占，但不会重新调度，值得注意的是切换后的进程在上一次__schedule(true)之前禁止抢占了，所以这次切换回来仍是直接抢占的，需要使能
+				} while (need_resched());					//如果切换后的进程仍需要调度就继续
+				
+
+
+
+===========================================================
+
+__schedule(true)
+	cpu = smp_processor_id();
+	rq = cpu_rq(cpu);										//获取当前cpu的runqueue data structure
+	prev = rq->curr;										//确定当前运行的进程task_struct结构体
+	schedule_debug(prev)									//检测preempt_count是否为1，不是则强制设置为1，然后继续运行(防止不是正常的状态进入)
+	local_irq_disable();									//禁止本地中断
+	rcu_note_context_switch(preempt)						//在使用rcu时不允许阻塞、调度、idle等(静态状态)，若处于静态状态的话说明已经退出临界区，当发生进程切换时，表示已经退出临界区，通知RCU更新状态，
+	rq_lock(rq, &rf);										//runqueue上锁
+	...
+	if (!preempt && prev->state)							//若非抢占调度且state非running，则说明是主动睡眠
+		if (signal_pending_state(prev->state, prev))
+			prev->state = TASK_RUNNING						//如果state是TASK_INTERRUPTIBLE或SIGKILL，则恢复running状态再切换
+		deactivate_task(rq, prev, DEQUEUE_SLEEP | DEQUEUE_NOCLOCK);		//将睡眠的task从rq上移除，并通过传入的flag表明这次deactive是由于sleep
+        if (prev->in_iowait) {  							//若是schedule_io触发的睡眠
+            atomic_inc(&rq->nr_iowait); 					//增加rq上io睡眠进程的数量，原子操作是由于ttwu中可能并发减
+            delayacct_blkio_start(); 						//记录当前io开始的时间，ttwu会记录io结束的时间
+        }
+	...
+	next = pick_next_task(rq, prev, &rf)					//挑选合适的next进程来运行
+	clear_tsk_need_resched(prev);							//清除 TIF_NEED_RESCHED 标志位
+	clear_preempt_need_resched();
+	
+	if (likely(prev != next))								//和之前不同进行切换
+		rq->nr_switches++									//rq上统计切换计数+1
+		rq->curr = next;
+		...
+		rq = context_switch(rq, prev, next, &rf); 			//正式开始进程上下文切换，里面会释放rq的锁
+	else { 													//若prev和next相同则无需调度，收尾处理：包括释放锁和开中断
+		...
+	...
+	next = pick_next_task(rq, prev, &rf)					//挑合适的进程来调度
+	...	
+	context_switch(rq, prev, next, &rf)						//切换到合适进程上运行
+
+===========================================================
+挑选合适进程
+
+1、根据调度器的优先级(deadline > RT > CFS > Idle)、依次调用调度器的pick_next_task实现找下个执行的线程
+2、rq中的线程都是CFS，则直接调用cfs的pick_next_task：
+	2.1、挑选cfs_rq上vruntimer最小的线程；
+	2.2、最终没有合适的线程，就挑选idle进程运行；
+
+
+pick_next_task(rq, prev, &rf)
+	if (likely((prev->sched_class == &idle_sched_class ||	//如果当前rq上的线程全是cfs的，
+		    prev->sched_class == &fair_sched_class) &&
+		   rq->nr_running == rq->cfs.h_nr_running))
+		p = fair_sched_class.pick_next_task(rq, prev, rf)	//则直接调用cfs的接口找下个调度的线程
+		if (unlikely(!p))
+			p = idle_sched_class.pick_next_task(rq, prev, rf);		//没有的话就调用idle
+
+	for_each_class(class) {
+		p = class->pick_next_task(rq, prev, rf);
+
+===========================================================
+线程切换:
+	1、地址空间切换；
+	2、通用寄存器切换；
+
+struct task_struct {
+
+	struct mm_struct		*mm;							//改线程的地址空间描述符
+	struct mm_struct		*active_mm;						//改线程当前正在使用的地址空间描述符
+	
+	mm_context_t 			context:
+		atomic64_t  id										//ASID
+
+}
+1、对于正常的用户控件线程，其mm和active_mm是相同的
+2、内核线程mm是NULL(没有进程地址空间)，只是用active_mm表示该进程的地址空间
+
+
+
+context_switch(rq, prev, &rf)
+	...
+	mm = next->mm;
+	oldmm = prev->active_mm;
+	...
+	
+	if (!mm) {												//mm为空的话说明是个内核线程，所以只能设置oldmm
+		next->active_mm = oldmm;							//所有内核线程或者用户线程关于内核的地址空间都一样，所以可以直接借用被切出线程的地址空间
+		atomic_inc(&oldmm->mm_count);						// 888 由于被内核线程借用，所以引用计数+1，后续会保存在；在内核线程被切除的时候会保存在rq结构体中,借助rq结构体在finish_task_switch中计数-1
+		enter_lazy_tlb(oldmm, next)							//arm64为空函数；x86会使用：在其他核修改了页表需要同步其他核(ASID、一个进程里的多个线程在不同核上)，但改cpu将切到内核线程中不需要同步用户控件的tlb，所以lazy
+	} else
+		switch_mm_irqs_off(oldmm, mm, next)					//在这里完成普通用户线程的内存地址空间切换，因为切换是在内核中发生的，切换前后线程的内核的地址空间都一样(所有用户空间的内存地址空间都一样)
+			switch_mm(prev,next,tsk)						// 888 ./include/linux/mmu_context.h +14
+				__switch_mm(next)							//./arch/arm64/include/asm/mmu_context.h:230,所有应用线程、内核线程共享内核地址空间(ttbr1_el1)，所以地址空间的切换主要是切换ttbr0_el1
+					if (next == &init_mm) 					//对于swapper进程的地址空间，其用户空间没有任何的mapping，而如果要切入的地址空间就是swapper进程的地址空间的时候，将（设定ttbr0_el1指向empty_zero_page）
+						cpu_set_reserved_ttbr0();
+					check_and_switch_context(next, cpu)		//arch\arm64\mm\context.c
+						asid = atomic64_read(&mm->context.id)	//获取需要切换进程的asid：其中低16 bit对应HW 的ASID（ARM64支持8bit或者16bit的ASI）。其余的bit都是软件扩展的，我们称之generation;HW asid溢出后，asid generation会累加
+						if (old_active_asid &&					//当要切入的mm的software asid仍然处于当前这一批次（generation）的ASID的时候，切换中不需要任何的TLB操作，可以直接调用cpu_switch_mm进行地址空间的切换
+							!((asid ^ atomic64_read(&asid_generation)) >> asid_bits) &&
+							atomic64_cmpxchg_relaxed(&per_cpu(active_asids, cpu),
+										 old_active_asid, asid))
+							goto switch_mm_fastpath;
+						asid = atomic64_read(&mm->context.id);
+						if ((asid ^ atomic64_read(&asid_generation)) >> asid_bits) {		//要切入的进程和当前的asid generation不一致，那么说明该地址空间需要一个新的software asid,调用new_context分配一个新的context ID
+							asid = new_context(mm);
+							atomic64_set(&mm->context.id, asid);
+						}
+						if (cpumask_test_and_clear_cpu(cpu, &tlb_flush_pending))			//各个cpu在切入新一代的asid空间的时候会调用local_flush_tlb_all将本地tlb flush掉
+							local_flush_tlb_all();
+
+						cpu_switch_mm(mm->pgd, mm)
+							cpu_do_switch_mm(virt_to_phys(pgd),mm)
+								phys_to_ttbr x3, x0
+								msr	ttbr0_el1, x3			//将mm->pgd物理地址写入ttbr0_el1
+				
+
+	if (!prev->mm) {										//如果被切出去的线程是内核线程，
+		prev->active_mm = NULL;								//则该线程测试不再需要active_mm(已经挂起，不需要分地址空间了)
+		rq->prev_mm = oldmm;								//  888
+	}
+	...
+	switch_to(prev, next, prev)								//切换寄存器状态和堆栈，被切换的线程调用后就一去不会；要是被调用的线程从这返回，说明是再次被调度执行了
+		 __switch_to((prev), (next))						// ./include/asm-generic/switch_to.h，主要切换通用寄存器、浮点寄存器、地址空间寄存器(ttbr0_el1,ttbr1_el1),其他寄存器（ASID、thread process ID register等）
+			fpsimd_thread_switch(next)						//./arch/arm64/kernel/process.c,当前FPSIMD的状态保存到了内存中（task.thread.fpsimd_state），从要切入的next进程描述符中获取FPSIMD状态，并加载到CPU上
+			tls_thread_switch(next)							//概念同上，不过是处理tls（thread local storage）的切换。这里硬件寄存器涉及tpidr_el0和tpidrro_el0，涉及的内存是task.thread.tp_value。具体的应用场景是和线程库相关
+			hw_breakpoint_thread_switch(next);
+			contextidr_thread_switch(next);					//这两条和硬件跟踪相关
+			...
+			cpu_switch_to(prev, next)
+				mov	x10, #THREAD_CPU_CONTEXT
+				add	x8, x0, x10								//找到prev的task_struct->thread
+					mov	x9, sp
+					stp	x19, x20, [x8], #16					// store callee-saved registers,将x19～x28,pc、sp、fp等寄存器保存到prev的task_struct->thread->cpu_context中
+					stp	x21, x22, [x8], #16
+					stp	x23, x24, [x8], #16
+					stp	x25, x26, [x8], #16
+					stp	x27, x28, [x8], #16
+					stp	x29, x9, [x8], #16
+					str	lr, [x8]
+					
+					add	x8, x1, x10
+					ldp	x19, x20, [x8], #16					// restore callee-saved registers，将next的task_struct->thread->cpu_context回复到通用寄存器中
+					ldp	x21, x22, [x8], #16
+					ldp	x23, x24, [x8], #16
+					ldp	x25, x26, [x8], #16
+					ldp	x27, x28, [x8], #16
+					ldp	x29, x9, [x8], #16
+					ldr	lr, [x8]
+					mov	sp, x9								//恢复next的栈指针
+					ret										//x30（lr）寄存器的值加载到PC，至此现场完全恢复到调用cpu_switch_to那一点上
+	...
+	finish_task_switch(prev)
+		struct mm_struct *mm = rq->prev_mm
+		...
+		
+		if (mm) {
+			...
+			mmdrop(mm);										//内核线程借用别人的地址空间计数-1
+
+
+
+
+TLB：
+	1、单核场景进程切换时地址空间操作优化；
+		1.1、地址空间切换前flush所有的TLB和cache，安全，性能不佳；
+		1.2、只flush用户空间地址，内核空间不变；
+		1.3、特殊情况下的考量：1、用户进程切到内核进程；2、一个进程中的两个线程切换；都不需要切换地址空间，也就不需要flush tlb；
+		1.4、引入ASID的支持，进程切换不再需要flush tbl，通过ASID保证了硬件可以区分A和B进程地址空间
+	2、多核场景进程切换时地址空间操作特点；
+		2.1、ASID的支持同样大大提升了新能；
+		2.2、由于不flash tlb，各个cpu上可能保留各种task的tlb entry；当一个task被销毁或修改了自己的页表，这是可能需要flash多个cpu的TLB entry(ARM64在指令集层面支持shareable domain中所有PEs上的TLB flush动作)(x86 IPI实现)带来了额外的开销
+
+
+
+

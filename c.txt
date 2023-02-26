@@ -1,0 +1,21 @@
+#define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

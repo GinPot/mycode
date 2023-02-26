@@ -1,0 +1,24 @@
+
+spin lock: 是互斥的，任何时候只有一个thread（reader or writer）进入临界区;
+rw spin lock: 允许多个reader并发执行,但reader和writer不能并发执行，更多照顾reader；
+seq lock： 允许多个reader并发执行,但reader和writer不能并发执行，更多照顾writer；
+RCU： 允许一个updater（不能多个updater进入临界区，这可以通过spinlock来保证）和多个reader并发执行
+	（1）RCU只能保护动态分配的数据结构，并且必须是通过指针访问该数据结构
+	（2）受RCU保护的临界区内不能sleep（SRCU不是本文的内容）
+	（3）读写不对称，对writer的性能没有特别要求，但是reader性能要求极高。
+	（4）reader端对新旧数据不敏感。
+
+
+
+
+
+http://www.wowotech.net/kernel_synchronization/rcu_fundamentals.html
+https://blog.csdn.net/gnr_123/article/details/114783204?spm=1001.2014.3001.5502
+https://zhuanlan.zhihu.com/p/374902282
+
+
+
+
+
+
+

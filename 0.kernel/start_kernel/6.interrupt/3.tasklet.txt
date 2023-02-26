@@ -1,0 +1,96 @@
+
+1、tasklet可以分配，也可以静态分配，数量不限；
+2、同一种tasklet在多个cpu上不会并行执行(同一种类型的tasklet只能在一个cpu上执行，因此tasklet_trylock就是起这个作用的)；
+
+
+
+==============================================================================================================
+初始化tasklet：
+
+struct tasklet_struct																				//每个结构体对应一个tasklet任务
+{
+	struct tasklet_struct *next;																	//该链表中的下一个tasklet
+	unsigned long state;																			//tasklet的状态，TASKLET_STATE_SCHED表示该tasklet以及被调度到某个CPU上执行，TASKLET_STATE_RUN表示该tasklet正在某个cpu上执行
+	atomic_t count;																					//和enable或者disable该tasklet的状态相关，如果count等于0那么该tasklet是处于enable的，如果大于0，表示该tasklet是disable的,支持嵌套
+	void (*func)(unsigned long);																	//该tasklet的callback函数
+	unsigned long data;																				//data是传递给func的参数
+};
+
+struct tasklet_head {
+	struct tasklet_struct *head;
+	struct tasklet_struct **tail;
+};
+
+static DEFINE_PER_CPU(struct tasklet_head, tasklet_vec);
+static DEFINE_PER_CPU(struct tasklet_head, tasklet_hi_vec);
+
+
+start_kernel()
+	softirq_init()
+		for_each_possible_cpu(cpu) {
+			per_cpu(tasklet_vec, cpu).tail = &per_cpu(tasklet_vec, cpu).head;						//初始化tasklet的precpu的全局数组tasklet_vec
+			per_cpu(tasklet_hi_vec, cpu).tail = &per_cpu(tasklet_hi_vec, cpu).head;
+		}
+		open_softirq(TASKLET_SOFTIRQ, tasklet_action)
+		open_softirq(HI_SOFTIRQ, tasklet_hi_action)
+
+==============================================================================================================
+禁用/使能tasklet：																					//支持嵌套
+
+
+tasklet_disable()
+	tasklet_disable_nosync(t)
+		atomic_inc(&t->count)
+
+tasklet_enable()
+	atomic_dec(&t->count)
+
+
+==============================================================================================================
+定义tasklet：
+	#define DECLARE_TASKLET(name, func, data) 	struct tasklet_struct name = { NULL, 0, ATOMIC_INIT(0), func, data }
+	#define DECLARE_TASKLET_DISABLED(name, func, data) 	struct tasklet_struct name = { NULL, 0, ATOMIC_INIT(1), func, data }
+		tasklet_enable(&name);
+
+	struct tasklet_struct my_tasklet;
+	tasklet_init(&my_tasklet,my_tasklet_function, (unsigned long )my_tasklet_data);
+
+==============================================================================================================
+调度tasklet：
+	tasklet_schedule(&my_tasklet)
+		if (!test_and_set_bit(TASKLET_STATE_SCHED, &t->state))										//放置在执行这步后还没执行完，又触发了中断并运行在其他核上，再次调用了tasklet_schedule，这里不会运行而直接退出
+			__tasklet_schedule(t)
+				__tasklet_schedule(t)
+					__tasklet_schedule_common(t, &tasklet_vec, TASKLET_SOFTIRQ)
+						local_irq_save(flags)														//关本地中断
+						head = this_cpu_ptr(headp);													//放入per-cpu的链表中
+						t->next = NULL;
+						*head->tail = t;
+						head->tail = &(t->next);
+						raise_softirq_irqoff(softirq_nr);
+							wakeup_softirqd()														//唤醒softirq中断线程
+								tasklet_action
+									local_irq_disable()												//关本地中断
+									list = tl_head->head											//取改cpu的链表并清空
+									...
+									while (list) 
+										if (tasklet_trylock(t))										//如果cpu0正在处理这个tasklet handler时，又触发了中断再cpu1上唤醒了tasklet，因为已经清state，仍会运行到这，但会直接跳过
+											if (!atomic_read(&t->count))							//对应禁用/使能tasklet设置
+												if (!test_and_clear_bit(TASKLET_STATE_SCHED, &t->state))	//清state
+											t->func(t->data)										//运行handler
+											continue
+										
+										local_irq_disable();
+										...															//如果该tasklet在别的cpu上执行，则将其挂在本cpu的链表尾部，等待下次机会执行；以此保证tasklet只会在一个cpu上执行，不会再多个cpu上并发
+						local_irq_restore(flags);
+
+
+
+
+
+
+
+
+
+
+

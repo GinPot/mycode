@@ -1,0 +1,75 @@
+
+=============================================================================
+
+TLB：Translation Lookaside Buffer
+
+
+一般A72每个核都实现了2个level的TLB：
+	L1 instruction TLB（48-entry fully-associative）、L1 data TLB（32-entry fully-associative）
+	L2 unified TLB（1024-entry 4-way set-associative）
+
+
+
+程序中的数据访问指令执行过程：
+	（1）将PC中的虚拟地址翻译成物理地址								instruction TLB加速指令虚拟地址到物理地址的转换
+	（2）从memory中获取数据访问指令（假设该指令需要访问地址x）				instruction cache加速性能
+	（3）将虚拟地址x翻译成物理地址y									data TLB加速数据虚拟地址到物理地址的转换
+	（4）从location y的memory中获取具体的数据						data cache加速性能
+
+
+
+TLB 操作过程：
+	1、首先在L1 data TLB中寻找匹配的TLB entry（如果是取指操作，那么会在L1 instruction TLB中寻找），如果运气足够好，TLB hit，那么一切都结束了，否者进入下一步；
+	2、在L2 TLB中寻找匹配的TLB entry。如果不能命中，那么就需要启动hardware translation table walk了；
+	3、执行hardware translation table walk；根据cache的配置访问main memory或L2 cache；
+
+
+
+TLB entry内容描述：
+	（1） 物理地址（更准确的说是physical page number）。这是地址翻译的结果。
+	（2） 虚拟地址（更准确的说是virtual page number）。用cache的术语来描述的话应该叫做Tag，进行匹配的时候就是对比Tag。
+	（3） Memory attribute（例如：memory type，cache policies，access permissions）
+	（4） status bits（例如：Valid、dirty和reference bits）
+	（5） 其他相关信息。例如 ASID、VMID，下面会进一步描述
+
+
+
+TLB 匹配条件：
+	1、请求进行地址翻译的VA page number等于TLB entry中的VA page number；
+	2、请求进行地址翻译的memory space identifier等于TLB entry中的memory space identifier,即：区分请求是来自EL3 Exception level、Nonsecure EL2 Exception level或者是Secure and Non-secure EL0还是EL1 Exception levels
+	3、如果该entry被标记为non-Global(用户地址空间)，那么请求进行地址翻译的ASID（保存在TTBRx(保存翻译页表)中）等于TLB entry中的ASID；
+		3.1、如果是内核地址空间，TTBR一样的话用的相同的内核，可以不用flush这部分entry(页表描述符中往往有一个bit来标识该地址翻译是global还是local的)；
+		3.2、支持ASID的话，切换进程时也不用flush上个进程的TLB，可以保存多个相同虚拟地址到不同物理地址的映射，通过ASID(TTBR)来区分；
+	4、虚拟化场景，多个gest os之前虚拟地址也可以一样，通过VMID（保存在VTTBR(mmu二级翻译)寄存器中）来区分；
+
+
+
+TLB 一致性问题：
+	硬件不维护TLB的一致性问题，软件上一但修改page table，也需要进行TLB invalidate操作
+
+
+
+TLB flush API：
+	1、void flush_tlb_all(void)：invalidate系统中所有的TLB（各个PEs上的TLB）
+		底层命令是：tlbi vmalle1is；
+			Tlbi：TLB Invalidate指令
+			vmalle1is是参数，指明要invalidate那些TLB：
+				vm：	本次invalidate操作对象是当前VMID;
+				all：invalidate所有的TLB entry;
+				e1：	表示要flush的TLB entry的memory space identifier是EL0和EL1;
+				is： inner shareable的意思，表示要invalidate所有inner shareable内的所有PEs的TLB(没有is，则表示要flush的是local TLB，其他processor core的TLB则不受影响);
+		1.1、void local_flush_tlb_all(void)：仅是invalidate本CPU core上的TLB。local_flush_tlb_all对应的底层接口是：tlbi vmalle1，没有is参数
+
+	2、void flush_tlb_mm(struct mm_struct *mm)：invalidate TLB cache中所有和mm这个进程地址空间相关的条目
+		底层命令是：tlbi aside1is
+			is：	inner shareable的意思，表示该操作要广播到inner shareable domain中的所有PEs
+			asid： 该操作范围是根据asid来进行的
+
+	3、void flush_tlb_page(struct vm_area_struct *vma, unsigned long addr)：对addr对应的TLB entry进行flush操作
+		底层命令是：tlbi vale1is, addr
+			va： 	参数是virtual address的意思，表示本次flush tlb的操作是针对当前asid中的某个virtual address而进行的；
+			addr：	给出具体要操作的地址和ASID信息
+			l：		表示last level，也就是说用户修改了last level Translation table的内容，那么我们仅仅需要flush最后一级的页表（page table walk可以有多级）
+	4、 void flush_tlb_range(struct vm_area_struct *vma, unsigned long start, unsigned long end)：地址空间中的一段虚拟内存（start到end-1）在TLB中的entry进行flush
+		ARM64并没有直接flush一个range的硬件操作接口，实际flush一个range是通过flush一个个的page来实现的；
+

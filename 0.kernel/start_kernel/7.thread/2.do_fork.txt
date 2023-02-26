@@ -1,0 +1,176 @@
+1、CLONE_UNTRACED：
+	一个进程(tracer?strace、gdb)可以观察控制另一个进程，有这个参数该进程就不能被trace，内核线程都会携带这个参数；
+2、CLONE_NEWNS：
+	设置这个参数说明子进程不和父进程共享mount namespace(不同进程的挂载点列表可以是独立的) /proc/pid/[mountinfo  mounts  mountstats]；
+3、CLONE_FS：
+	设置这个参数说明子进程和父进程共享文件系统信息；不设置则子进程copy附近的文件系统信息，之后子进程改变文件系统信息将不会影响父进程
+	文件系统信息有struct fs_struct来抽象并包含了mount namespace，如果共享了文件系统信息就一定要是同一个mount namespace
+4、CLONE_NEWUSER：
+	设置这个参数说明子进程创建新的user namespace，
+	user namespace用来管理userID和groupID的映射，一个user namespace形成一个container，该user namespace的user ID和group ID的权限被限定在container内部。
+	也就是说，某一个user namespace中的root（UID等于0）并非具备任意的权限，他仅仅是在该user namespace中是privileges的，在该user namespace之外，该user并非是特权用户
+	
+	CLONE_NEWUSER|CLONE_FS的组合会导致一个系统漏洞，可以让一个普通用户窃取到root的权限
+5、CLONE_THREAD：
+	设置了这个参数表示创建的子进程和父进程在一个线程组中，否则会创建新的线程组；
+	kernel中，不论是进程还是线程，都是会分配一个task struct并且分配一个唯一的PID;
+	linux引入线程组概念，该进程所有线程共享的PID被称为线程组ID(tgid，thread group id)；对于sys_getpid系统调用返回的是tgid,sys_gettid系统调用，返回了task struct的pid成员
+6、CLONE_SIGHAND
+	设置这个参数表示子进程和父进程共享信号处理；
+	设定了CLONE_THREAD后必须同时设定CLONE_SIGHAND
+7、CLONE_VM
+	设置参数表示共享内存地址空间，包括栈；
+	设定了CLONE_SIGHAND表示共享signal handler，前提条件就是要共享地址空间
+8、CLONE_PARENT
+	设置时表示子进程想要和父进程拥有相同的父进程
+9、SIGNAL_UNKILLABLE
+	这个flag是init进程(idle进程)的，其他进程不会设置这个flag；
+	init进程是第一个进程，会负责为所有用户控件进程处理后事；如果创建的子进程变成init的兄弟进程，那改子进程退出时没有进程处理后事可能会变成僵尸进程，所以要杜绝
+10、CLONE_NEWPID
+	设置时表示子进程创建新的PID namespace；
+	
+	CLONE_NEWUSER设定的时候，就会为fork的进程创建一个新的user namespace；新的user namespace中第一个进程的uid就是0，也就是root用户，这个进程在这个新的user namespace中有超级权限，但是，在其父user namespace中只是一个普通用户
+	所以不能同时设置
+
+
+
+
+
+PI-futexes：优先级继承；inux内核提供了一个叫做快速用户空间互斥（Fast User-Space Mutexes）的锁的机制，简称futex；
+	用来解决优先级翻转(高优先级进程需要等到优先级的资源如mutex持有，又有个中优先级的进程一直抢占低优先级的调度使得高优先级进程需要等到中优先级运行完，再等待低优先级运行完才能真正运行)；
+	优先级继承通过在低优先级调用mutex时把低优先级进程提到到高优先级进程一样的优先级；
+
+credential： 内核对象(进程、file、socket等)的一个属性集；内核对象可能存在下面动作：
+	1、该进程访问文件系统中的文件；需要使用进程的subjective context
+	2、在进行文件的asynchronous I/O操作时，文件向进程发送信号；需要使用进程的objective context
+
+	内核中，struct cred就是对credential的抽象：进程描述符（struct task_struct）、文件描述符（struct file ）这些内核对象都需要定义一个struct cred的成员来代表该对象的credential信息；
+	进程对象在操作其他内核对象时使用cred成员；其他对象操作该进程对象时需要获取该进程的credential时候需要使用read_cred成员
+	
+======================================================================================================================================
+
+_do_fork(flags|CLONE_VM|CLONE_UNTRACED, (unsigned long)fn, (unsigned long)arg, NULL, NULL, 0)
+	if (!(clone_flags & CLONE_UNTRACED)) {												//tracer设置	
+		if (clone_flags & CLONE_VFORK)
+			trace = PTRACE_EVENT_VFORK;
+		else if ((clone_flags & CSIGNAL) != SIGCHLD)
+			trace = PTRACE_EVENT_CLONE;
+		else
+			trace = PTRACE_EVENT_FORK;
+
+		if (likely(!ptrace_event_enabled(current, trace)))
+			trace = 0;
+	}
+	...
+	copy_process(clone_flags, stack_start, stack_size, parent_tidptr, child_tidptr, NULL, trace, tls, NUMA_NO_NODE)
+		...																											//参数安全检查
+		task_struct = dup_task_struct(current, node)																//复制内核栈、thread_info和task_struct
+			1、分配内核栈和thread_info数据结构所需要的memory（统一分配），分配task sturct需要的memory。
+			2、设定内核栈和thread_info以及task sturct之间的联系
+			3、将父进程的thread_info和task_struct数据结构的内容完全copy到子进程的thread_info和task_struct数据结构
+			4、将task_struct数据结构的usage成员设定为2。usage成员其实就是一个reference count。之所以被设定为2，因为fork之后已经存在两个reference了，一个是自己，另外一个是其父进程
+		...
+		rt_mutex_init_task(p)																						//real time mutex是被设计用来支PI-futexes的，
+		...
+		if (atomic_read(&p->real_cred->user->processes) >= task_rlimit(p, RLIMIT_NPROC)) {							//该用户是否已经创建了太多的进程，如果没有超出了resource limit，那么继续fork
+			if (p->real_cred->user != INIT_USER && !capable(CAP_SYS_RESOURCE) && !capable(CAP_SYS_ADMIN))			//如果超出了resource limit，但user ID是root的话，没有问题，继续;如果不是root，但是有CAP_SYS_RESOURCE或者CAP_SYS_ADMIN的capbility，也OK，否则的话fork失败
+				goto bad_fork_free;
+		}
+		copy_creds(p, clone_flags)
+			if ( clone_flags & CLONE_THREAD ) 																		//创建线程相关的代码
+				p->real_cred = get_cred(p->cred);
+				get_cred(p->cred);																					//对credential描述符增加两个计数，因为新创建线程的cred和real_cred都指向父进程的credential描述符
+				atomic_inc(&p->cred->user->processes);																//属于该user的进程/线程数目增加1
+			new = prepare_creds()																					//后段的代码是和fork进程相关。prepare_creds是创建一个当前task的subjective context（task->cred）的副本
+			if (clone_flags & CLONE_NEWUSER)
+				create_user_ns(new)																					//如果父子进程不共享user namespace，那么还需要创建一个新的user namespace
+			...
+			p->cred = p->real_cred = get_cred(new)																	//和线程的处理类似，只不过进程需要创建一个credential的副本
+			...
+			if (nr_threads >= max_threads)																			//nr_threads是系统当前的线程数目；max_threads是系统允许容纳的最大的线程数
+				在系统初始化的时候（fork_init），会根据当前系统中的memory对该值进行设定。
+				max_threads = mempages / (8 * THREAD_SIZE / PAGE_SIZE);
+				if (max_threads < 20)  // 最小也会被设定为20															//proc/sys/kernel/threads-max可以设置该值
+						max_threads = 20;
+			...
+			delayacct_tsk_init(p)																					//指per-task delay accounting。这个feature是统计每一个task的等待系统资源的时间（例如等待CPU、memeory或者IO）。这些统计信息有助于精准的确定task访问系统资源的优先级
+				一个进程/线程可能会因为下面的原因而delay：
+					1、该进程/线程处于runnable，但是等待调度器调度执行
+					2、该进程/线程发起synchronous block I/O，进程/线程处于阻塞状态，直到I/O的完成
+					3、进程/线程在执行过程中等待page swapping in。由于内存有限，系统不可能把进程的各个段（正文段、数据段等）都保存在物理内存中，当访问那些没有在物理内存的段的地址的时候，就会有磁盘操作，导致进程delay，这里有个专业的术语叫做capacity misses
+					4、进程/线程申请内存，但是由于资源受限而导致page frame reclaim的动作。
+
+				系统为何对这些delay信息进行统计呢？主要让系统确定下列的优先级的时候更有针对性：
+					1、task priority。如果该进程/线程长时间的等待CPU，那么调度器可以调高该任务的优先级。
+					2、IO priority。如果该进程/线程长时间的等待I/O，那么I/O调度器可以调高该任务的I/O优先级。
+					3、rss limit value。引入虚拟内存后，每个进程都拥有4G的地址空间。系统中有那么多进程，而物理内存就那么多，不可能让每一个进程虚拟地址（page）都对应一个物理地址（page frame）。没有对应物理地址的那部分虚拟地址的实际内容应该保存在文件或者swap设备上，一旦要访问该地址，系统会产生异常，并处理好分配page frame，页表映射，copy磁盘内容到page frame等一系列动作。rss的全称是resident set size，表示有物理内存对应的虚拟地址空间。由于物理内存资源有限，各个进程要合理使用。rss limit value定义了各个进程rss的上限
+
+				struct task_delay_info *delays		//进程描述符中的delays成员记录了该task的delay统计信息，delayacct_tsk_init就是对该数据结构进程初始化
+			p->flags &= ~(PF_SUPERPRIV | PF_WQ_WORKER | PF_IDLE);
+				1、PF_SUPERPRIV，这个flag是标识进程曾经使用了super-user privileges（并不表示该进程有超级用户的权限）。对于新创建的进程，当然不会用到super-user privileges，因此要清掉。
+				2、清除PF_WQ_WORKER标识。PF_WQ_WORKER是用来标识该task是一个workqueue worker。如果新创建的内核线程的确是一个workqueue worker的话，那么在其worker thread function（worker_thread）中会进行设定的。具体worker、workqueue等概念请参考Concurrency-managed workqueues相关的描述
+			p->flags |= PF_FORKNOEXEC;
+				3、设定PF_FORKNOEXEC标识，表明本进程/线程正在fork，还没有执行exec的动作
+
+
+
+
+
+======================================================================================================================================
+
+内核线程创建：
+	pid = kernel_thread(kernel_init, NULL, CLONE_FS)
+		_do_fork(flags|CLONE_VM|CLONE_UNTRACED, (unsigned long)fn, (unsigned long)arg, NULL, NULL, 0)
+
+	task_struct = kthread_run(kthread_test, NULL, "kthread_test")
+		task_struct *__k = kthread_create(threadfn, data, namefmt, ## __VA_ARGS__)
+			kthread_create_on_node(threadfn, data, NUMA_NO_NODE, namefmt, ##arg
+				list_add_tail(&create->list, &kthread_create_list)
+				wake_up_process(kthreadd_task)																		//唤醒内核kthreadd_task创建
+					...
+					create_kthread(create)						//kthreadd_task内核线程
+						pid = kernel_thread(kthread, create, CLONE_FS | CLONE_FILES | SIGCHLD)
+							_do_fork(flags|CLONE_VM|CLONE_UNTRACED, (unsigned long)fn, (unsigned long)arg, NULL, NULL, 0)
+
+		wake_up_process(__k)
+
+
+===========================
+用户空间创建进程有2个场景：
+1、创建的子进程和父进程运行相同的程序：
+	只需要fork就可以直接运行，(fork时完全复制父进程的资源开销大，所以因入COW(copy-on-write)，fork开销相对就好很多）；
+2、创建的子进程运行自己的程序：
+	先fork+cow，然后load新的bin文件重建text、data等segment；
+
+
+1、用户层fork创建进程：
+	SYSCALL_DEFINE0(fork)
+		_do_fork(SIGCHLD, 0, 0, NULL, NULL, 0)
+
+//vfork创建全部使用父进程的内存空间，包括栈，两个进程不能同时运行，所以会阻塞父进程；
+//创建时也不会复制父进程的页表
+//没有MMU的情况下使用，或者用于性能敏感的场景(fork时完全复制父进程的资源开销非常大)
+2、用户层vfork创建进程：
+	SYSCALL_DEFINE0(vfork)
+		_do_fork(CLONE_VFORK | CLONE_VM | SIGCHLD, 0, 0, NULL, NULL, 0)
+3、用户层clone创建线程：
+	SYSCALL_DEFINE5(clone, unsigned long, CLONE_THREAD|CLONE_SIGHAND|CLONE_VM|clone_flags, unsigned long, newsp, int __user *, parent_tidptr, unsigned long, tls, int __user *, child_tidptr)
+		_do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -106,7 +106,21 @@ static struct i2c_driver ac108_i2c_driver = {
 
 
 
+&i2c {
+	status = "okay";
+	#address-cells = <0x1>;
+	#size-cells = <0x0>;
 
+	asm330lhh@6a {
+		compatible = "st,asm330lhh";
+		reg = <0x6a>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <41 IRQ_TYPE_LEVEL_HIGH>;								//在调用bus->probe时解析得到：really_probe(dev, drv) ==> dev->bus->probe(dev) ==> i2c_device_probe ==> of_irq_parse_one(dev->of_node, 0)
+		pinctrl-names = "default";
+		pinctrl-0 = <&asm330_int1_default &asm330_int2_default>;			//在调用probe前解析：driver_probe_device() ==> pinctrl_bind_pins(dev)根据dts设置为对应的复用功能、上下拉、驱动力等
+		host-notify;														//用i2c adapter的中断作为i2c设备的中断,H5不支持改功能
+	};
+};
 
 
 

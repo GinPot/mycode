@@ -99,6 +99,13 @@ mv64xxx_i2c_probe()
 								if (WARN(!adap->name[0], "i2c adapter has no name"))					//需要有adap->name
 								if (!adap->algo)
 								...
+								i2c_setup_host_notify_irq_domain(adap);									//register soft irqs for Host Notify
+									if (!i2c_check_functionality(adap, I2C_FUNC_SMBUS_HOST_NOTIFY))		//H5不支持该功能
+										return 0;
+									domain = irq_domain_create_linear(adap->dev.fwnode,					//若支持的话创建一个新的domain
+												  I2C_ADDR_7BITS_COUNT,
+												  &i2c_host_notify_irq_ops, adap);
+								...
 								adap->dev.bus = &i2c_bus_type;
 								adap->dev.type = &i2c_adapter_type;
 								device_register(&adap->dev)												//注册adapter的dev
@@ -115,8 +122,12 @@ mv64xxx_i2c_probe()
 												of_property_read_u32(node, "reg", &addr)
 												info->addr = addr										//保存i2c设备地址
 											i2c_new_device(adap, &info)
+												of_i2c_get_board_info(&adap->dev, node, &info)			//获取i2c设备树几点信息
+													if (of_property_read_bool(node, "host-notify"))
+														info->flags |= I2C_CLIENT_HOST_NOTIFY;			//用i2c adapter的中断作为i2c设备的中断
 												i2c_new_client_device(adap, info)
 													client->addr = info->addr
+													client->init_irq = info->irq;
 													strlcpy(client->name, info->type, sizeof(client->name))
 													client->dev.parent = &client->adapter->dev
 													client->dev.bus = &i2c_bus_type

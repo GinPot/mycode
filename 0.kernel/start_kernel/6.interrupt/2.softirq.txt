@@ -1,0 +1,192 @@
+
+1、softirq采用哪个核触发，就哪个核处理软中断；
+2、softirq不会抢占另外一个正在运行的softirq，需要等到之前的softirq运行完后才会执行下一个；
+3、softirq可以在多个CPU上同时运行
+
+4、在中断结束 irq_exit()时，使能软中断local_bh_enable()时都会判断是否有softirq需要处理；
+5、irq_exit()和local_bh_enable()时有软中断直接运行软中断处理
+
+6、开机创建各cpu的ksoftirqd内核线程；
+7、驱动用的raise_softirq接口是唤醒ksoftirqd内核线程去执行软中断
+
+==============================================================================================================
+enum
+{
+	HI_SOFTIRQ=0,
+	TIMER_SOFTIRQ,
+	NET_TX_SOFTIRQ,
+	NET_RX_SOFTIRQ,
+	BLOCK_SOFTIRQ,
+	IRQ_POLL_SOFTIRQ,
+	TASKLET_SOFTIRQ,
+	SCHED_SOFTIRQ,
+	HRTIMER_SOFTIRQ, /* Unused, but kept as tools rely on the numbering. Sigh! */
+	RCU_SOFTIRQ,    /* Preferable RCU should always be the last softirq */
+
+	NR_SOFTIRQS
+};
+struct softirq_action
+{
+	void	(*action)(struct softirq_action *);
+};
+static struct softirq_action softirq_vec[NR_SOFTIRQS] __cacheline_aligned_in_smp;
+
+void open_softirq(int nr, void (*action)(struct softirq_action *))
+{
+    softirq_vec[nr].action = action;
+}
+
+typedef struct {
+    unsigned int __softirq_pending;				//软件寄存器，oftirq_pending参数设置某个bit等于1, bit为软中断number
+    unsigned int ipi_irqs[NR_IPI];
+} ____cacheline_aligned irq_cpustat_t;
+irq_cpustat_t irq_stat[NR_CPUS] ____cacheline_aligned;
+
+
+
+软中断注册：
+start_kernel()
+	softirq_init()
+		for_each_possible_cpu(cpu) {
+			per_cpu(tasklet_vec, cpu).tail =
+				&per_cpu(tasklet_vec, cpu).head;
+			per_cpu(tasklet_hi_vec, cpu).tail =
+				&per_cpu(tasklet_hi_vec, cpu).head;
+		}
+		open_softirq(TASKLET_SOFTIRQ, tasklet_action)
+		open_softirq(HI_SOFTIRQ, tasklet_hi_action)
+
+		open_softirq(IRQ_POLL_SOFTIRQ, irq_poll_softirq);						./lib/irq_poll.c:210
+		open_softirq(BLOCK_SOFTIRQ, blk_done_softirq);							./block/blk-softirq.c:154
+		open_softirq(NET_TX_SOFTIRQ, net_tx_action);							./net/core/dev.c:9869
+		open_softirq(NET_RX_SOFTIRQ, net_rx_action);							./net/core/dev.c:9870
+		open_softirq(SCHED_SOFTIRQ, run_rebalance_domains);						./kernel/sched/fair.c:10730
+		open_softirq(HRTIMER_SOFTIRQ, hrtimer_run_softirq);						./kernel/time/hrtimer.c:1897
+		open_softirq(TIMER_SOFTIRQ, run_timer_softirq);							./kernel/time/timer.c:1947, 处理各驱动注册的定时器中断(timer_setup)到期的handler
+		open_softirq(RCU_SOFTIRQ, rcu_core);									./kernel/rcu/tree.c:3358
+
+
+
+
+
+触发softirq：
+	raise_softirq(nr)												//内核线程上下文调用：先保留当前中断状态(diaf),再关本地中断
+	raise_softirq_irqoff(nr);										//在中断上下文调用
+		__raise_softirq_irqoff(nr);									//在本核对应的irq_cpustat_t结构体的__softirq_pending参数设置某个bit等于1, bit为软中断number
+			if (!in_interrupt())									//如果在中断上下文就不用下午处理，因为中断返回的时候子软会进行软中断的处理
+				wakeup_softirqd();									//若是线程上下文调用，就需要调用这个函数唤醒本CPU的softirqd这个内核线程
+
+
+
+使能禁止softirq：														//给线程上下文使用的，用于放置softirq handler抢占临界区域
+	local_bh_disable()
+		__local_bh_disable_ip(_THIS_IP_, SOFTIRQ_DISABLE_OFFSET)
+			preempt_count_add(cnt);									//preempt_count 9-15bit加1
+			barrier();												//内存屏障
+	
+	local_bh_enable()
+		__local_bh_enable_ip(_THIS_IP_, SOFTIRQ_DISABLE_OFFSET)
+			WARN_ON_ONCE(in_irq());									//如果是在中断上下文，是不需要disable/enable bottom half函数来保护共享数据，因为bottom half其实是不可能抢占top half的
+			...
+			preempt_count_sub(cnt - 1)								//在临界区时被中断打断后又起了个softirq退出继续运行临界区，运行完后local_bh_enable()时先减1表示softirq count的bit field9～15被减去了1，但有保持了preempt disable的状态，让其保证该CPU处理这个softirq
+			if (unlikely(!in_interrupt() && local_softirq_pending()))	//如果不在中断上下文(preempt_count 8-20bit非0)且有softirq pengding则调用do_softirq()
+				do_softirq()
+					local_irq_save(flags)							//禁止本地中断
+					do_softirq_own_stack();							//运行softirq
+						__do_softirq()
+					local_irq_restore(flags)						//使能本地中断
+			preempt_count_dec();									//preempt_count0-7bit减1
+			preempt_check_resched();								//在softirq handler中很可能wakeup了高优先级的任务，这里最好要检查一下，看看是否需要进行调度，确保高优先级的任务得以调度执行
+
+
+
+退出中断时唤醒softirq：
+	irq_exit()
+		if (!in_interrupt() && local_softirq_pending())				//1、如果是中断嵌套的话!in_interrupt()不会调用softirq，2、如果本次硬中断是中断了softirq handler，退出硬中断后是返回软中断，为保证softirq是串行执行的
+			invoke_softirq()										//
+				if (!force_irqthreads)
+					do_softirq_own_stack()
+						__do_softirq()								//对于arm，softirq处理就是在当前的内核栈上执行
+							pending = local_softirq_pending();		//获取pending的标记
+							__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET)							//禁软中断，放置其他人有触发软中断
+							set_softirq_pending(0);													//清楚pending标记
+							local_irq_enable()														//使能本地中断，softirq可以被硬中断打断
+							...
+							h = softirq_vec															//每个核都从softirq_vec全局数组上取callback函数运行，所以需要做好并发
+							while ((softirq_bit = ffs(pending))) {									//pending哪个bit位置1表示软中断号
+								h += softirq_bit - 1
+								h->action(h)
+								h++;
+								pending >>= softirq_bit
+							}
+							...
+							local_irq_disable();													//禁止中断
+							
+							pending = local_softirq_pending()										//处理软中断中被硬中断打断又触发softirq
+							if (pending) {
+								if (time_before(jiffies, end) && !need_resched() && --max_restart)	//如果softirq运行时间小于2ms，且不需要调度，且运行softirq次数小于10
+									goto restart;													//返回继续运行
+								wakeup_softirqd()													//否则延迟到内核线程运行
+							...
+							__local_bh_enable(SOFTIRQ_OFFSET);										//使能软中断
+						
+						
+				else
+					wakeup_softirqd()
+==============================================================================================================
+ksoftirqd内核线程创建：
+
+static struct smp_hotplug_thread softirq_threads = {
+	.store			= &ksoftirqd,
+	.thread_should_run	= ksoftirqd_should_run,
+	.thread_fn		= run_ksoftirqd,
+	.thread_comm		= "ksoftirqd/%u",
+};
+
+
+	early_initcall(spawn_ksoftirqd)
+		cpuhp_setup_state_nocalls(CPUHP_SOFTIRQ_DEAD, "softirq:dead", NULL, takeover_tasklets);		//在移除cpu时，调用takeover_tasklets清空tasklet的链表
+		BUG_ON(smpboot_register_percpu_thread(&softirq_threads));
+			__smpboot_create_thread(plug_thread, cpu)
+				kthread_create_on_cpu(smpboot_thread_fn, td, cpu, ht->thread_comm)
+					if (!ht->thread_should_run(td->cpu))
+						schedule()																	//没有软中断pending就调度出去
+					else
+						ht->thread_fn(td->cpu)														//有pending就处理
+							__do_softirq()
+				kthread_park(tsk)																	//创建后先暂停线程
+
+
+
+ffff0000100dd360 f4
+FFFF0000100DD454
+
+
+do_cpu_up(cpu, CPUHP_ONLINE)
+	cpuhp_up_callbacks(cpu, st, CPUHP_BRINGUP_CPU)
+		cpuhp_invoke_callback(cpu, st->state, true, NULL, NULL)
+			smpboot_create_threads(cpu)
+
+非BSP核启动： 0号线程创建的1号线程在up核成功后调用
+[    0.064202] GinPot: __kthread_create_on_node, ksoftirqd/1
+[    0.064212] CPU: 0 PID: 1 Comm: swapper/0 Not tainted 5.2.0 #61
+[    0.064218] Hardware name: GinPot H5 (DT)
+[    0.064223] Call trace:
+[    0.064233]  dump_backtrace+0x0/0x168
+[    0.064243]  show_stack+0x14/0x20
+[    0.064252]  dump_stack+0xa8/0xcc
+[    0.064261]  __kthread_create_on_node+0x118/0x1c8
+[    0.064269]  kthread_create_on_node+0x5c/0x80
+[    0.064278]  kthread_create_on_cpu+0x30/0xa8
+[    0.064286]  __smpboot_create_thread.part.1+0x6c/0x110
+[    0.064294]  smpboot_create_threads+0x7c/0xd8
+[    0.064304]  cpuhp_invoke_callback+0x84/0x248
+[    0.064313]  _cpu_up+0xf4/0x1e0
+[    0.064320]  do_cpu_up+0x9c/0xc0
+[    0.064327]  cpu_up+0x10/0x18
+[    0.064336]  smp_init+0xa4/0x11c
+[    0.064345]  kernel_init_freeable+0xf0/0x258
+[    0.064353]  kernel_init+0x10/0x108
+[    0.064362]  ret_from_fork+0x10/0x18
+
+
