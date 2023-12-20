@@ -1,0 +1,23 @@
+
+spin lock: 是互斥的，任何时候只有一个thread（reader or writer）进入临界区;
+Read/Write spin lock: 允许多个reader并发执行,但reader和writer不能并发执行，更多照顾reader； (现在一般被rc代替)
+seq lock： 允许多个write顺序执行,但reader和writer不能并发执行，更多照顾writer；
+RCU(read copy update)： 允许一个updater（不能多个updater进入临界区，这可以通过spinlock来保证）和多个reader并发执行
+	对于被RCU保护的共享数据结构，读者不需要获得任何锁就可以直接访问，但写者在访问它时首先要拷贝一个副本，然后对副本进行修改，最后使用一个回调机制在适当的时机把指向数据的指针重新指向新的被修改的数据
+		1、读者不需要承担同步开销(同步开销：1、获取锁;2、执行”原子指令“;3、执行”内存屏障“)，因为读端不需要锁，不使用原子指令，故不会导致锁竞争。
+		2、写者承担很大的同步开销，需要读取并复制共享数据，还有使用互斥锁机制等
+
+
+
+
+
+http://www.wowotech.net/kernel_synchronization/rcu_fundamentals.html
+https://blog.csdn.net/gnr_123/article/details/114783204?spm=1001.2014.3001.5502
+https://zhuanlan.zhihu.com/p/374902282
+
+
+
+
+
+
+

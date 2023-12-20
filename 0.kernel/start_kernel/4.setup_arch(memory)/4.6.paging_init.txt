@@ -1,0 +1,110 @@
+NUMA_NO_NODE： 这个flag会使得申请内存时在一个node中申请，而不是NUMP NODE中的内存，保证内存访问的效率
+
+bool bottom_up： memblock申请内存时的分配方式： true表示低地址(内核镜像结束位置)到高地址分配； false表示高地址往低地址分配；
+
+MEMBLOCK_NONE		= 0x0,	/* No special request */					没有特殊要求的区域，一般从设备树解析出的内存这个属性设置都为0
+MEMBLOCK_HOTPLUG	= 0x1,	/* hotpluggable region */					运行过程中，物理内存可以热拔插
+MEMBLOCK_MIRROR		= 0x2,	/* mirrored region */						内核会将该内存的数据进行复制备份，分别放在主内存和镜像内存中？
+MEMBLOCK_NOMAP		= 0x4,	/* don't add to kernel direct mapping */	线性映射区域，改区域不能添加到内核映射区域，4.1.early_fixmap_init.txt可以知道内核映射的虚拟地址在vmalloc区域
+
+
+PTE_PXN：			特权模式下可执行
+PTE_UXN：			用户模式下可执行
+
+PAGE_KERNEL_ROX:	可读特权模式可执行
+PAGE_KERNEL_EXEC:	可读可写特权模式可执行
+PAGE_KERNEL： 		可读可写不可执行
+
+NO_CONT_MAPPINGS：	限制不让映射到连续的物理页上；在映射连续的物理页时，可以通过是设置TLB条目的contiguous bit来保存TLB条目，这可以减少tlb的空间占用，但是contiguous mapping需要
+					这个区域都有读写权限；但如映射rodata端时只能为只读，所以不能使用contiguous mapping
+	CONT_MAPPINGS:	TLB的entries的数量是固定的，通过减少外部内存地址转换的次数来提示TLB hit率，所以引入了这个；(如果开启了contiguous bit，而要转换的table entries却不是连续的，或者entries的output在地址范围之外或没有对齐，那么将会产生TLB abort。)
+NO_BLOCK_MAPPINGS：	限制巨页的映射
+
+
+1,基于swapper_pg_dir页表基地址，重新把内核代码所占用的内存映射到对应的虚拟地址上;
+2,将memblock的所有内存都基于pgdp做物理地址和虚拟地址的映射，虚拟地址用内核线性映射区PAGE_OFFSET
+	内核的text和rodata同时映射在vmalloc区和线性映射区，但一般是用vmalloc区的，只有少数用线性映射区，如hibernate？
+
+============================================================================================================
+
+
+
+phys = memblock_phys_alloc(PAGE_SIZE, PAGE_SIZE)												//返回的是物理地址
+	memblock_phys_alloc_range(size, align, 0, MEMBLOCK_ALLOC_ACCESSIBLE)
+		memblock_alloc_range_nid(size, align, start, end, NUMA_NO_NODE)
+			memblock_find_in_range_node(size, align, start, end, nid, flags)
+
+============================================================================================================
+
+paging_init
+	pgd_t *pgdp = pgd_set_fixmap(__pa_symbol(swapper_pg_dir))					//返回的pgdp(FIX_PGD的虚拟地址)虚拟地址将映射到swapper_pg_dir对应的物理地址上，基于fixmap实现
+
+	map_kernel(pgdp)
+		pgprot_t text_prot = rodata_enabled ? PAGE_KERNEL_ROX : PAGE_KERNEL_EXEC				//一般情况下可执行的代码设置为PAGE_KERNEL_ROX
+		map_kernel_segment(pgdp, _text, _etext, text_prot, &vmlinux_text, 0, VM_NO_GUARD)		//基于pgdp(swapper_pg_dir),把_text对应的虚拟地址映射到其物理地址上； 倒数第二个参数是为倒数第四个参数服务
+			pa_start = __pa_symbol(va_start)													//获取_text的物理地址
+			size = va_end - va_start;															//_text大小
+			...
+			__create_pgd_mapping(pgdp, pa_start, (unsigned long)va_start, size, prot,
+					early_pgtable_alloc, flags)													//基于pgdp(swapper_pg_dir),把_text对应的虚拟地址映射到其物理地址上
+				pgd_t *pgdp = pgd_offset_raw(pgdir, virt);										//swapper_pg_dir虚拟地址+_text虚拟地址的bit[39:47]，即保存下一级PUD物理地址的虚拟地址
+				...
+				alloc_init_pud(pgdp, addr, next, phys, prot, pgtable_alloc, flags)			
+					pgd_t pgd = READ_ONCE(*pgdp)												//取出保存PUD的物理地址,因为之前没基于swapper_pg_dir映射过，所以这里读出来的值为0
+					if (pgd_none(pgd))
+						pud_phys = pgtable_alloc(PUD_SHIFT)										//将调用 early_pgtable_alloc()申请pud的物理内存
+							phys = memblock_phys_alloc(PAGE_SIZE, PAGE_SIZE)					//参数1申请内存size，参数2申请内存的对齐方式
+								memblock_phys_alloc_range(size, align, 0, MEMBLOCK_ALLOC_ACCESSIBLE)
+									memblock_alloc_range_nid(size, align, start, end, NUMA_NO_NODE)
+										memblock_find_in_range_node(size, align, start, end, nid, flags)
+											__memblock_find_range_bottom_up(bottom_up_start, end, size, align, nid, flags)		//从低地址(内核镜像结束位置)到高地址分配
+
+											__memblock_find_range_top_down(start, end, size, align, nid,flags)					//上面方式没有申请到的话，则从高地址往低地址分配；
+										memblock_reserve(found, size)							//将申请到的内存放入memblock_reserve中
+							ptr = pte_set_fixmap(phys)											//将物理地址映射到FIX_PTE的虚拟地址上
+							memset(ptr, 0, PAGE_SIZE)											//初始化这片内存
+							pte_clear_fixmap()													//刷新mmu的tlb缓存
+						__pgd_populate(pgdp, pud_phys, PUD_TYPE_TABLE)							// ****回到主线**** 将上面申请到的物理地址存放在pgdp虚拟地址中；
+						pgd = READ_ONCE(*pgdp)													//再取出pud的物理地址
+						...
+						pudp = pud_set_fixmap_offset(pgdp, addr)								//得到保存PMD物理地址的虚拟地址
+						...																		//后续的设置请参考4.2.setup_machine_fdt.txt
+			...
+			vm_area_add_early(vma)																//将_text信息存入vm_struct结构体并放入vmlist链表中
+		map_kernel_segment(pgdp, __start_rodata, __inittext_begin, PAGE_KERNEL, &vmlinux_rodata, NO_CONT_MAPPINGS, VM_NO_GUARD)
+		map_kernel_segment(pgdp, __inittext_begin, __inittext_end, text_prot, &vmlinux_inittext, 0, VM_NO_GUARD)
+		map_kernel_segment(pgdp, __initdata_begin, __initdata_end, PAGE_KERNEL, &vmlinux_initdata, 0, VM_NO_GUARD)
+		map_kernel_segment(pgdp, _data, _end, 					   PAGE_KERNEL, &vmlinux_data, 0, 0)
+		...
+	map_mem(pgdp)
+		memblock_mark_nomap(kernel_start, kernel_end - kernel_start)							//因为上面已经映射了内核的代码使用的物理地址，所以这里这些物理地址设置MEMBLOCK_NOMAP
+		if (crashk_res.end)
+			memblock_mark_nomap(crashk_res.start, resource_size(&crashk_res))					//将转存储机制预留的内存也设置为MEMBLOCK_NOMAP
+		for_each_memblock(memory, reg)
+			__map_memblock(pgdp, start, end, PAGE_KERNEL, flags)								//将memblock的内存都基于pgdp做物理地址和虚拟地址的映射，虚拟地址用内核线性映射区PAGE_OFFSET
+
+		__map_memblock(pgdp, kernel_start, kernel_end, PAGE_KERNEL, NO_CONT_MAPPINGS)			//将内核的text和rodata端映射到线性映射区, 方便hibernate的访问，但需要注意要设置NO_CONT_MAPPINGS
+		memblock_clear_nomap(kernel_start, kernel_end - kernel_start);							//前面memblock_mark_nomap的反向操作
+	
+		
+		__map_memblock(pgdp, crashk_res.start, crashk_res.end + 1, PAGE_KERNEL, NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS)
+		memblock_clear_nomap(crashk_res.start, resource_size(&crashk_res))						//同上
+
+	pgd_clear_fixmap();																			//前面 pgd_set_fixmap 用过的虚拟地址释放掉
+
+
+	cpu_replace_ttbr1(lm_alias(swapper_pg_dir));								// ttbr1寄存器指向新准备的swapper_pg_dir(物理地址)页表
+	init_mm.pgd = swapper_pg_dir												// 同时init_mm.pgd也设置为swapper_pg_dir页表
+
+
+	memblock_free(__pa_symbol(init_pg_dir), __pa_symbol(init_pg_end) - __pa_symbol(init_pg_dir))	//arm64_memblock_init 中把_text到_end都加入到memblock_reserve中，其中就包含了init_pg_dir区域
+
+
+
+
+
+
+
+
+
+

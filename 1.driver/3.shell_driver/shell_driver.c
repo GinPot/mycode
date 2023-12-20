@@ -12,6 +12,16 @@ static int __init shell_driver_init(void)
 	int i,num;
 	char *envp[]	= { NULL };
 
+//	char s_id[] = "vdo";
+//	char *envp[]	= { NULL };
+//	char cmd[3][25] = {"/system/bin/fsck_msdos", "-ny", "/dev/block/   "};
+//	memcpy(&cmd[2][11], s_id, sizeof(s_id));
+//
+//	pr_info("%s will be remounting read-only, try to fsck_msdos: %s %s %s.\n", s_id, cmd[0],cmd[1],cmd[2]);
+//	call_usermodehelper(cmd[0], (char **)cmd, envp, UMH_WAIT_PROC);
+//	printk("%s\n", __func__);
+
+
 	printk( "GinPot: %s.\n", __func__);
 
 	num = sizeof(envpuser)/200;

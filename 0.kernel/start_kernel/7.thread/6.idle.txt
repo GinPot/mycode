@@ -1,0 +1,27 @@
+cpu idle governor
+
+
+
+
+
+
+
+===============================================================================
+start_kernel()
+	arch_call_rest_init()
+		rest_init()
+			cpu_startup_entry(CPUHP_ONLINE)
+				cpuhp_online_idle(state)					//其实这里没做什么事，剩下的cpu工作交给smp_init()->cpuhp_threads_init()创建的热拔插线程cpuhp/%u->cpuhp_thread_fun()
+				while (1)
+					do_idle()
+
+
+
+
+
+
+
+
+
+
+

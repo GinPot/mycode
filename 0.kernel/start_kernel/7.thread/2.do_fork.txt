@@ -111,8 +111,15 @@ _do_fork(flags|CLONE_VM|CLONE_UNTRACED, (unsigned long)fn, (unsigned long)arg, N
 				2、清除PF_WQ_WORKER标识。PF_WQ_WORKER是用来标识该task是一个workqueue worker。如果新创建的内核线程的确是一个workqueue worker的话，那么在其worker thread function（worker_thread）中会进行设定的。具体worker、workqueue等概念请参考Concurrency-managed workqueues相关的描述
 			p->flags |= PF_FORKNOEXEC;
 				3、设定PF_FORKNOEXEC标识，表明本进程/线程正在fork，还没有执行exec的动作
-
-
+			...
+			retval = sched_fork(clone_flags, p)
+				p->sched_class->task_fork(p)
+					task_fork_fair(p)
+						if (sysctl_sched_child_runs_first && curr && entity_before(curr, se)) {	//如果设置了sysctl_sched_child_runs_first(表示子进程先运行)，且子线程的虚拟时间大于父线程虚拟时间
+							resched_curr(rq)
+	...
+	wake_up_new_task(p)
+		check_preempt_curr(rq, p, WF_FORK);
 
 
 

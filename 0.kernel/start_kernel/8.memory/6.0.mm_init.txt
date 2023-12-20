@@ -1,0 +1,150 @@
+
+0、主要将memblock管理的内存空间释放到伙伴系统中
+	1、加入是看内存大小，尽可能放到10阶对应的空闲链表上，不足时才一次挂到较小的位阶链表上；
+	2、位阶为0，即1页框内存先放入高速缓存链表(per-cpu)(zone->pageset->pcp->lists)中，并设置热页：刚释放的内存可能cache中还有缓存，当有其他进程申请单页框是，有限把热页分配出去，提高cache命中率；位阶大于0的则直接放回伙伴系统且设置为冷页
+	3、释放到空闲链表之前后检查同阶是否有内存是否有空闲，有的话合并如高阶内存再检测，最后再加入到空闲链表中
+
+放入伙伴系统前的准备:
+	1、将所有reserved内存都保留设为G_reserved不进入此伙伴系统；
+	2、将所有的pglist_data(每个NUMA)中所有的zone里面的 managed_pages 成员初始化为0，重新统计可用于伙伴系统管理的页框数；
+
+
+
+
+=================================================================================================
+
+swiotlb:
+	1,swiotlb_init(1)将很早申请一块低地址的buffer，默认64M，也可以通过cmdline设置swiotlb=64M设置大小；
+	2,申请物理地址(该地址用于CPU访问)时发现内存地址超过dma能寻址的范围，将在1中的buffer中申请一块同样大小的内存给dma使用，所以这两块内存是完全不同的内存，服务对象也不同；swiotil将维护这两个地址的对应关系；
+	3,CPU读这块地址之前或者写数据之后，会先把数据从dma的内存拷贝到cpu的内存中，或者将cpu的内存数据拷贝到dma内存；
+	这样保证了cpu和dma看到数据的一致性，但效率低，因避免使用
+
+
+================================================================================================================================================
+pageblock_order=9
+MAX_ORDER=11
+
+continue_merging: 		0~8
+
+max_order < MAX_ORDER	9~10
+order < MAX_ORDER-2		0~8
+
+
+mm_init()
+	page_ext_init_flatmem()														//参考4.setup_arch(memory)->4.8.0.bootmem_init(Sparse_memory).txt中的3中内存模型，一般采用sparse memory model，所以此函数为空
+	mem_init()																	//主要将memblock管理的内存空间释放到伙伴系统中
+		if (swiotlb_force == SWIOTLB_FORCE || max_pfn > (arm64_dma_phys_limit >> PAGE_SHIFT))			//当最大内存大于dma能寻址的最大物理地址时，将使能swiotlb
+			swiotlb_init(1)
+		else
+			swiotlb_force = SWIOTLB_NO_FORCE
+		set_max_mapnr(max_pfn - PHYS_PFN_OFFSET);														// max_mapnr = 0x80000 - 0x40000	最大页数减去内存开始地址对应的页数
+		memblock_free_all()
+			reset_all_zones_managed_pages()
+				for_each_online_pgdat(pgdat)															//将所有pglist_data(每个NUMA_id对应一个)中的
+					for (z = pgdat->node_zones; z < pgdat->node_zones + MAX_NR_ZONES; z++)				//所有zone中的
+						atomic_long_set(&z->managed_pages, 0)											//所有managed_pages初始化为0
+			pages = free_low_memory_core_early()
+				memblock_clear_hotplug(0, -1)															//将所有memblock.memory里的内存memblock_region->flags都去掉MEMBLOCK_HOTPLUG标志
+				for_each_reserved_mem_region(i, &start, &end)
+					reserve_bootmem_region(start, end)													//将该区域的每个页对应的struct page结构体flag成员的reserved标志置位，保留该内存，即不会给到伙伴系统
+						...
+						for (; start_pfn < end_pfn; start_pfn++)
+							...
+							INIT_LIST_HEAD(&page->lru)													// 链表指向自己； 正常内存这个链表是用于链接伙伴系统的链表
+							__SetPageReserved(page)														//保留内存小于4K时，也是使得这4K直接保留；置位页框对应struct page中flag成员的PG_reserved位
+				for_each_free_mem_range(i, NUMA_NO_NODE, MEMBLOCK_NONE, &start, &end, NULL)				// 888 被reversed内存拆分剩余内存一块块循环； 将memblock.memory中没有在memblock.reversed中的内存区域, start,end为该区域中未reserved的内存；
+					count += __free_memory_core(start, end)												//将未使用的内存释放到伙伴系统中
+						__free_pages_memory(start_pfn, end_pfn)
+							...
+							while (start < end)															// 888 最大位阶值依次计算
+								order = min(MAX_ORDER - 1UL, __ffs(start))								//取这段内存起始地址的数值的最大位阶,__ffs(start)取start整数中第一个bit为1的位是第几位
+								while (start + (1UL << order) > end)
+									order--																//计算这段内存size对应的位阶
+								memblock_free_pages(pfn_to_page(start), start, order)					//将位阶对应内存的大小加入到伙伴系统
+									__free_pages_core(page, order)
+										prefetchw(p)													//写预取; prefetch()用于读预取
+										for (loop = 0; loop < (nr_pages - 1); loop++, p++)				// 888 一页页循环初始化page状态
+											prefetchw(p + 1);
+											__ClearPageReserved(p);										//清楚page->flag中的PG_reserved位设置为0
+											set_page_count(p, 0);										//将page的引用计数设置为0， page->_refcount = 0
+										...
+										atomic_long_add(nr_pages, &page_zone(page)->managed_pages)		// 前面把这个参数初始化为0了，现在需要重新统计；这次减去了所有reserved的页框
+										set_page_refcounted(page)										//设置引用计数为page->_refcount=1，将挂到伙伴系统中；
+										__free_pages(page, order)
+											if (put_page_testzero(page))								//对page->_refcount引用计数做原子减1及测试，检测主要确认内存是否还有被其他人使用
+											free_the_page(page, order)
+												if (order == 0)
+													free_unref_page(page)								//如果是1个页框，则放到cpu的单页框高速缓存链表中，累计一定数量页框再放回伙伴系统链表中；
+														free_unref_page_commit(page, pfn)
+															migratetype = get_pcppage_migratetype(page);									//获取迁移类型，伙伴系统初始化阶段内存都属于可移动类型MIGRATE_MOVABLE,(见4.8.0.bootmem_init(Sparse_memory).txt)
+															if (migratetype >= MIGRATE_PCPTYPES) 											//percpu的链表迁移类型要小于MIGRATE_PCPTYPES
+																if (unlikely(is_migrate_isolate(migratetype))) {
+																	free_one_page(zone, page, pfn, 0, migratetype);							//若是MIGRATE_ISOLATE，则直接释放到伙伴系统中
+																	return
+																migratetype = MIGRATE_MOVABLE												//大于的话就都放在MIGRATE_MOVABLE类型中
+															pcp = &this_cpu_ptr(zone->pageset)->pcp
+															list_add(&page->lru, &pcp->lists[migratetype])									// 888 添加到per_cpu的高速链表中
+															pcp->count++
+															if (pcp->count >= pcp->high)
+																free_pcppages_bulk(zone, batch, pcp)										//当数量大于pcp->high时，批量将pcp->batch个页框放入伙伴系统中
+																	...
+																	list_del(&page->lru)													//从pageset->pcp->lists链表中共移除
+																	...
+																	__free_one_page(page, page_to_pfn(page), zone, 0, mt)					//将page对应的页添加到伙伴系统中，0代码0阶，size是1页框
+												esle
+													__free_pages_ok(page, order)
+														free_pages_prepare(page, order, true)												//其中trace_mm_page_free()用于trace追踪机制；而kmemcheck_free_shadow()用于内存检测工具kmemcheck，如果未定义CONFIG_KMEMCHECK的情况下，它是一个空函数。接着后面的PageAnon()等都是用于检查页面状态的情况，以判断页面是否允许释放，避免错误释放页面。由此可知该函数主要作用是检查和调试。
+														...
+														migratetype = get_pfnblock_migratetype(page, pfn)									//获取迁移类型
+														...
+														__count_vm_events(PGFREE, 1 << order)												//统计当前Cpu释放的页框数
+														free_one_page(page_zone(page), page, pfn, order, migratetype)
+															...																				//zone有isolate类型内存，且释放的内存是isolate类型，则重置下迁移类型
+															__free_one_page(page, pfn, zone, order, migratetype)
+																max_order = min_t(unsigned int, MAX_ORDER, pageblock_order + 1)				//没有大页的情况下MAX_ORDER=pageblock_order+1，但有大页情况下可能就不一样
+																...
+																if (likely(!is_migrate_isolate(migratetype)))
+																	__mod_zone_freepage_state(zone, 1 << order, migratetype)				// 888 将非MIGRATE_ISOLATE移动类似的内存都统计到vm_zone_stat[NR_FREE_PAGES]全局数组中，后续从中获取空闲内存的size
+																...																			//一些列内存检查
+																while (order < max_order - 1)
+																	...
+																	buddy_pfn = __find_buddy_pfn(pfn, order)								//异或方式找相邻的一个伙伴，并没有前后找伙伴
+																	buddy = page + (buddy_pfn - pfn)										//取伙伴页框对应的结构体
+																	if (!pfn_valid_within(buddy_pfn))										//检查页框的有效性
+																	if (!page_is_buddy(page, buddy, order))									//1,伙伴页不是内存空洞;2,伙伴页是否已经在buddy系统中;3,检查位阶是否相同;4,检查是否在同一个zone
+																	del_page_from_free_area(buddy, &zone->free_area[order])					//将伙伴页从伙伴系统链表中删除
+																	combined_pfn = buddy_pfn & pfn											//合并后新页框的起始物理页框号
+																	page = page + (combined_pfn - pfn)										//合并后新页框起始的page
+																	pfn = combined_pfn;														//返回while，向高位阶检测是否能合并
+																	order++;
+																if (max_order < MAX_ORDER)													//在位阶order>=pageblock_order&&order<MAX_ORDER时
+																	...																		//内核不想将isolate迁移类型的大块内存块和非isolate迁移类型的大块内存进行合并。而其它条件下，若伙伴系统中还存在能够合并的空闲内存块，还是按照while循环的处理方式进行内存块合并操作。
+																	if (migratetype != buddy_mt && (is_migrate_isolate(migratetype) || is_migrate_isolate(buddy_mt))) 	//即合并高阶内存时，若其中有一个是MIGRATE_ISOLATE迁移类型的内存块，则不合并直接加入伙伴系统
+																	
+																	...																									//若迁移类型相同，则调回上面while继续合并
+																if ((order < MAX_ORDER-2) && pfn_valid_within(buddy_pfn) && !is_shuffle_order(order))
+																	...
+																	buddy_pfn = __find_buddy_pfn(combined_pfn, order + 1);												//上面while已经把所有可以合并的阶位合并了，这里再次检查更高阶未是否满足合并要求，
+																	if (pfn_valid_within(buddy_pfn) && page_is_buddy(higher_page, higher_buddy, order + 1))
+																		dd_to_free_area_tail(page, &zone->free_area[order], migratetype)								//若发现更高阶满足要求，则把这块内存放到空闲链表末尾，这样可以避免马上又被分配出去，提高和高阶合并的可能性
+																add_to_free_area(page, &zone->free_area[order], migratetype)
+																	list_add(&page->lru, &area->free_list[migratetype])						//添加到对应位阶，对应迁移类型的链表中
+																	area->nr_free++
+					return count																											//返回总共把多少内存加入到了伙伴系统
+				totalram_pages_add(pages)																									//将总共的size设置到_totalram_pages全局变量中
+		mem_init_print_info(NULL)																											//打印系统内存情况
+			pr_info("Memory: %luK/%luK available (%luK kernel code, %luK rwdata, %luK rodata, %luK init, %luK bss, %luK reserved, %luK cma-reserved"
+					"%s%s)\n",
+					nr_free_pages() << (PAGE_SHIFT - 10),																					//空闲内存从vm_zone_stat[NR_FREE_PAGES]全局数组中获取
+					physpages << (PAGE_SHIFT - 10),
+					codesize >> 10, datasize >> 10, rosize >> 10,
+					(init_data_size + init_code_size) >> 10, bss_size >> 10,
+					(physpages - totalram_pages() - totalcma_pages) << (PAGE_SHIFT - 10),													//reserved内存，通过用总的内存，减去伙伴系统统计的内存，再减去cma的内存得到
+					totalcma_pages << (PAGE_SHIFT - 10)
+
+
+
+
+
+
+

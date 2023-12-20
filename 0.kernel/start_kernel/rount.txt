@@ -1,14 +1,45 @@
 
 0.start_kernel()
+	...
+	smp_setup_processor_id()																//内核的第一条log，cpu信息
+	...
+	local_irq_disable()																		//disable boot cpu中断
 	setup_arch()
-1.		unflatten_device_tree()																//设备树展开，保存节点信息好设备树结构体中
-		psci_dt_init()																		//解析psci节点,设置上层调用pcsi相关接口回调
-	..
+		...
+		early_fixmap_init();																//初始化fixmap段内存的pgd、pud、pmd
+		early_ioremap_setup();																//设置动态申请释放的fixmap段
+		...											
+		setup_machine_fdt(__fdt_pointer);													//__fdt_pointer参数在head.s阶段保存的x0设备树地址，解析设备树的ramdisk、bootargs、address/size-cells、memory等信息，并把memory添加到memblock数组中
+		...											
+		arm64_memblock_init();																//除了基本的memblock管理，代码中还会定义RESERVEDMEM_OF_DECLARE()的compatible和函数，遍历所有reserved-memory节点确认是否匹配compatible来调用对应的函数
+											
+		paging_init();																		//主要是重新设置swapper_pg_dir，替换init_pg_end，并释放之前的init_pg_end对应的memblock
+			map_kernel()																	//以swapper_pg_dir为页表基地址重新映射内核镜像的_text、__start_rodata、__inittext_begin、__initdata_begin、_data
+			map_mem()																		//以swapper_pg_dir为页表基地址线性映射所有内存
+		...
+		parse_early_param();																//驱动中有定义early_param("xx",func)会放到".init.setup"段中，且启动参数中有对应的xx字符，则会调用func函数
+		...
+		unflatten_device_tree()																//设备树展开，保存节点信息好设备树结构体中
+		...
+		bootmem_init()																		//numa的初始化(pg_data_t结构体), sparsememory初始化(mem_section,page结构体), zone分配, 依赖zone初始化左边提到的结构体，为伙伴算法做准备
+		...
+		psci_dt_init()																		//解析psci节点,设置上层调用pcsi相关接口回调，是后续唤醒其他核做准备
+	...
+	smp_prepare_boot_cpu()																	//检测cache的类型(如VIPT),获取cpu一些特性,或需要应用什么erratum的patch
+	boot_cpu_hotplug_init()																	//boot cpu直接设置state=CPUHP_ONLINE
+	build_all_zonelists(NULL)																//配置每个NUMA节点中的zone的排序，后续申请内存就按照这个排序依次尝试申请
+	...
+	sched_init()																			//各类调度器的初始化
+	...
+	workqueue_init_early()																	//早期工作队列初始化
+	...
 	init_IRQ()																				//硬中断初始化
 	...
+	hrtimers_init()																			//系统高精度定时器接口的初始化，并不是表明真实的hrtimer初始化好了，需要等到后面切换到hrtimer才是真正的高精度定时器
 	softirq_init()																			//软中断初始化
+	timekeeping_init()																		//timekeeping初始化
 	...
-	time_init()																				//ARM generic timer 、 tick、clock(CCU)等初始化
+	time_init()																				//ARM generic timer 、 tickevent/clocksource/cyclecounter、clock(CCU)等初始化
 	...
 	calibrate_delay()																		//通过24.00MHz的timer估算Bogo MIPS
 	...
@@ -21,6 +52,7 @@
 		rest_init()
 3.			pid = kernel_thread(kernel_init, NULL, CLONE_FS)								//创建第一个线程，即为1号进程；初始化驱动后进入用户态
 				kernel_init_freeable()
+					wait_for_completion(&kthreadd_done);									//等待第二个线程创建完成,后续需要依赖kthreadd线程创建内核线程
 					...
 					workqueue_init()
 					...
@@ -29,24 +61,43 @@
 						do_one_initcall(initcall_from_entry(fn))							//ksoftirqd内核线程创建
 					...
 					smp_init()																//通过psci接口唤醒其他核
+					sched_init_smp()														//多核(调度域SMP/NUMP)调度初始化
 
 					do_basic_setup()
 						...
 						driver_init()															//驱动模型的初始化：bus、class、platform的初始化
-							devtmpfs_init();													//觉得创建/dev/节点的方式
+							devtmpfs_init();													//创建/dev/节点的方式
 4.							devices_init();														//sys/下一级目录初始化; platform虚拟总线初始化、devices_add()
 						...
 						do_initcalls()
 							do_initcall_level()	//主要驱动初始化
 		
 5.							postcore_initcall(i2c_init)								__define_initcall(fn, 2)		//i2c总线初始化
-	
+							arch_initcall(gic_init_sys)								__define_initcall(fn, 3)		//注册系统休眠唤醒相关的syscore
 6.							arch_initcall_sync(of_platform_default_populate_init)	__define_initcall(fn, 3s)		//设备树展开后个节点注册platform_device
-	
-7.							module_init(x)											__define_initcall(fn, 6)		//普通驱动注册
-
-
-
+							subsys_initcall(param_sysfs_init)						__define_initcall(fn, 4)		//创建/sys/module/xxx/parameters/xxx文件，其值是内核的一个变量
+							clocksource_done_booting()								__define_initcall(fn, 5)		//切换为高精度timer,before device_initcall but after subsys_initcall
+7.							module_init(x)/device_initcall()						__define_initcall(fn, 6)		//普通驱动注册
+					...
+				...
+				free_initmem()																//释放__init_begin到__init_end的内存，包含所有驱动的入口
+				...
+				if (ramdisk_execute_command)												//运行ramdisk
+					run_init_process(ramdisk_execute_command)
+				if (execute_command)														//损坏机器的一种修复方案？
+					run_init_process(execute_command)
+				if (!try_to_run_init_process("/sbin/init") ||								//到用户控件运行init
+					!try_to_run_init_process("/etc/init") ||
+					!try_to_run_init_process("/bin/init") ||
+					!try_to_run_init_process("/bin/sh"))
+					return 0;
+				...
+			pid = kernel_thread(kthreadd, NULL, CLONE_FS | CLONE_FILES);					//创建第二个线程，用于专门创建内核线程使用
+			...
+			complete(&kthreadd_done)														//唤醒1号线程
+			...
+			cpu_startup_entry(CPUHP_ONLINE)
+				do_idle()
 
 
 

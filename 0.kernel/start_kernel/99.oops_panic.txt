@@ -1,0 +1,140 @@
+dump_stack();
+
+启动参数中设置”crashkernel=“内核panic后会生成vmcore，可以gdb？
+
+
+panic：	系统崩溃。
+oops:	一般应用调用导致的oops不会导致内核崩溃(也可能会对后续的代码运行造成影响，所以有panic_on_oops的设置)，内核里用引起的oops就容易崩溃
+
+中断上下文的oops会panic，其他oops时Linux还能继续运行不会挂；
+
+/proc/sys/kernel/panic_on_oops					设置为1，一律panic；0则尝试继续运行
+
+echo c > /proc/sysrq-trigger		//空指针panic
+
+
+//arch\arm64\mm\fault.c	==> 	die_kernel_fault()
+[  158.976308] Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000					// mem_abort_decode()
+[  158.985152] Mem abort info:
+[  158.987972]   ESR = 0x96000044
+[  158.991045]   Exception class = DABT (current EL), IL = 32 bits
+[  158.996977]   SET = 0, FnV = 0
+[  159.000048]   EA = 0, S1PTW = 0
+[  159.003206] Data abort info:																						// mem_abort_decode() ==> data_abort_decode()
+[  159.006103]   ISV = 0, ISS = 0x00000044
+[  159.009954]   CM = 0, WnR = 1
+[  159.012921] user pgtable: 4k pages, 48-bit VAs, pgdp=000000007acb0000											// show_pte()
+[  159.019399] [0000000000000000] pgd=0000000000000000
+[  159.024317] Internal error: Oops: 96000044 [#1] PREEMPT SMP														// arch\arm64\kernel\traps.c ==> __die()
+[  159.029882] Modules linked in: read_cpuid(O+)																	// print_modules()	==>	kernel\module.c ==>	print_modules()		打印所有已经insmod的驱动
+[  159.034245] CPU: 3 PID: 809 Comm: insmod Tainted: G           O      5.2.0 #33									//arch\arm64\kernel\process.c	==> __show_regs()	==> show_regs_print_info(KERN_DEFAULT)
+[  159.041454] Hardware name: GinPot H5 (DT)
+[  159.045460] pstate: 40000005 (nZcv daif -PAN -UAO)																//arch\arm64\kernel\process.c	==> print_pstate()
+[  159.050256] pc : read_cpuid_init+0x28/0x58 [read_cpuid]															//arch\arm64\kernel\process.c	==> __show_regs()
+[  159.055482] lr : do_one_initcall+0x5c/0x1c8
+[  159.059657] sp : ffff000011cfbb70
+[  159.062966] x29: ffff000011cfbb70 x28: ffff80003adc0fa0 
+[  159.068272] x27: 0000000000000100 x26: ffff000011cfbde0 
+[  159.073578] x25: 0000000000000001 x24: ffff000010ed9000 
+[  159.078885] x23: ffff800035021b80 x22: 0000000000000000 
+[  159.084191] x21: ffff000008980000 x20: ffff000010e09000 
+[  159.089497] x19: ffff000008981028 x18: ffffffffffffffff 
+[  159.094803] x17: 0000000000000000 x16: 0000000000000000 
+[  159.100109] x15: ffff000010e096c8 x14: ffff80003b15b91c 
+[  159.105414] x13: ffff80003b15b15e x12: ffff7e0000d29488 
+[  159.110720] x11: ffff80003dde3910 x10: 000080002cfe2000 
+[  159.116026] x9 : 0000000000000001 x8 : 0000000040000000 
+[  159.121332] x7 : 0000000000210d00 x6 : 0000000000000000 
+[  159.126638] x5 : ffff800035021b80 x4 : ffff80003ddd66a0 
+[  159.131943] x3 : 0000000000000001 x2 : 0000000000000000 
+[  159.137249] x1 : ffff000008981028 x0 : ffff000008981048 
+[  159.142555] Call trace:																							//arch\arm64\kernel\traps.c ==> show_stack()
+[  159.145004]  read_cpuid_init+0x28/0x58 [read_cpuid]
+[  159.149876]  do_one_initcall+0x5c/0x1c8
+[  159.153712]  do_init_module+0x54/0x1c8
+[  159.157457]  load_module+0x1dd0/0x22c0
+[  159.161203]  __se_sys_finit_module+0xec/0x100
+[  159.165555]  __arm64_sys_finit_module+0x18/0x20
+[  159.170085]  el0_svc_common.constprop.0+0x64/0x160
+[  159.174872]  el0_svc_handler+0x28/0x78
+[  159.178617]  el0_svc+0x8/0xc
+[  159.181499] Code: b0000013 9100a273 91012000 aa1303e1 (b9000043) 
+[  159.187587] ---[ end trace 7fe981fb794d47bd ]---
+
+arch\arm64\mm\fault.c
+	die_kernel_fault()
+		mem_abort_decode()
+			...
+			data_abort_decode()
+				...
+		show_pte(addr)
+			...
+		die("Oops", regs, esr)
+			__die(str, err, regs)
+				...
+				print_modules()
+				show_regs(regs)
+					__show_regs(regs)
+					dump_backtrace(regs, NULL)
+
+
+
+
+
+====================================================================================================
+
+
+--- a/linux-5.2/arch/arm64/kernel/traps.c
++++ b/linux-5.2/arch/arm64/kernel/traps.c
+@@ -88,10 +88,28 @@ static void dump_instr(const char *lvl, struct pt_regs *regs)
+        }
+ }
+ 
++static void dump_all_backtrace(void)
++{
++       struct task_struct *g, *p;
++
++       pr_info("\n\nGinPot: ===================\n");
++       pr_info("GinPot: dump all task backtrace.\n");
++
++       read_lock(&tasklist_lock);
++       for_each_process_thread(g, p) {
++               printk("CPU: %d PID: %d Comm: %s  %s\n",
++                       p->cpu, p->pid, p->comm, print_tainted());
++               dump_backtrace(NULL, p);
++       }
++       read_unlock(&tasklist_lock);
++       pr_info("GinPot: ===================\n\n");
++}
++
+ void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
+ {
+        struct stackframe frame;
+        int skip = 0;
++       static int dump_backtrace_flag = 0;
+ 
+        pr_debug("%s(regs = %p tsk = %p)\n", __func__, regs, tsk);
+ 
+@@ -140,6 +158,13 @@ void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
+        } while (!unwind_frame(tsk, &frame));
+ 
+        put_task_stack(tsk);
++
++
++       if(dump_backtrace_flag == 0){                   //uboot中读dmesg地址获取这些信息？？
++               dump_backtrace_flag = 1;
++               dump_all_backtrace();
++       }
++
+ }
+
+
+
+
+
+
+
+
+
+
+

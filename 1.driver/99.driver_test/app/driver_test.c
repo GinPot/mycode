@@ -66,7 +66,7 @@ int main(int argc, char **argv)
 //	poll_fds.events = POLLIN;
 //	
 //	while(1){
-//		ret = poll(&poll_fds, 1, 5000);
+//		ret = poll(&poll_fds, 1, 5000);				//超时5秒
 //		if(!ret)
 //			printf("time out\n");
 //		else{

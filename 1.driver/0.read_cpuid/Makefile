@@ -2,7 +2,7 @@ KERN_DIR = /root/env/linux-5.2/out
 
 SRC_C	:= $(wildcard *.c)
 SRC_O 	:= $(SRC_C:%.c=%.o)
-obj-m 	+= $(SRC_O)
+obj-m 	+= read_cpuid.o
 
 
 all: 

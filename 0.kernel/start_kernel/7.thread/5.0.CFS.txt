@@ -1,0 +1,148 @@
+
+
+1、调度延迟： 
+	保证每个进程至少运行一次的时间间隔； 如每个进程运行10ms，共2个进程，调度延迟就是20ms，有5个进程就是50ms；
+	CFS调度器在就绪进程少于8个时，调度延迟是固定的6ms；
+	当就绪进程大于7个时，会保证进程至少运行一定时间才让出cpu，默认最小粒度是0.75ms(sysctl_sched_min_granularity)，调度周期是动态变化的 __sched_period()
+
+
+
+2、就绪队列：
+	每个CPU都有个全局的就绪队列(cpu runqueue),struct rq(per-cpu),其包含了各调度类的就绪队列：struct cfs_rq, struct rt_rq, struct dl_rq;
+		struct rq {
+			struct cfs_rq 	cfs;
+			struct rt_rq 	rt;
+			struct dl_rq 	dl;
+			
+			u64			clock;								//递增的时间，表示 CPU runqueue 从初始化到现在的总时间，
+			u64			clock_task ____cacheline_aligned;	// 888 纯粹的所有进程运行的总时间，一个 CPU 上并不只是进程在运行，同时还有中断以及部分中断下半部.这部分的统计取决于内核配置，当内核配置了 CONFIG_IRQ_TIME_ACCOUNTING 时，rq->prev_irq_time 用来统计中断时间，而 clock_task 就是纯粹的 task 时间，在没有配置的情况下，clock 和 clock_task 不会区分中断用时
+		};
+	每个调度类(如CFS)又都有个属于自己管理的就绪队列struct cfs_rq
+		struct cfs_rq {
+			struct load_weight 		load;				//就绪队列权重，就绪队列管理的所有调度实体权重之和
+			unsigned int 			nr_running;			//就绪队列上调度实体的个数
+			u64 					min_vruntime;		//跟踪就绪队列上所有调度实体的最小虚拟时间
+			struct rb_root_cached 	tasks_timeline;		//用于跟踪调度实体按虚拟时间大小排序的红黑树的信息(包含红黑树的根以及红黑树中最左边节点)
+			
+			u64			exec_clock;						// 888 调度类的就绪队列已经运行实际时间总合
+		};
+	调度类自己的就绪队列以struct sched_entity为调度实体来进行管理(并不是以task_struct来管理，task_struct结构体包含了sched_entity),插入在；
+		struct sched_entity {
+			struct load_weight		load;				//权重信息，在计算虚拟时间的时候会用到inv_weight成员
+				unsigned long		weight				//sched_prio_to_weight
+				u32					inv_weight			//sched_prio_to_wmult
+			struct rb_node			run_node;			//CFS调度器的每个就绪队列维护了一颗红黑树，上面挂满了就绪等待执行的task，run_node就是挂载点
+			unsigned int			on_rq;				//调度实体se加入就绪队列后，on_rq置1。从就绪队列删除后，on_rq置0
+			u64						sum_exec_runtime;	// 888 调度实体已经运行实际时间总合
+
+			u64						vruntime;			//调度实体已经运行的虚拟时间总合
+			
+			//调度组有关
+			int						depth;				//当前调度组的深度
+			struct sched_entity		*parent;			//上一级对应的se
+			struct cfs_rq			*cfs_rq;			//上一级的cfs_rq
+			struct cfs_rq			*my_q;				//下一级的cfs_rq
+		};
+	
+		struct task_struct {
+			...
+			struct sched_entity			se;				//当前线程对应的调度实体
+			struct sched_rt_entity		rt;
+			struct sched_dl_entity		dl;
+			...
+		}
+		pick_next_task接口从就绪队列中选择最适合运行的调度实体(虚拟时间最小的调度实体)
+	/****************************************/
+		调度组：		每个调度组包含一个调度实体se在上一级中参与调度
+			CONFIG_CGROUPS 
+			CONFIG_FAIR_GROUP_SCHED
+			A运行9个进程，用户B只运行1个进程，A/B用户优先级相同的情况下各获得50% CPU时间，用户A中的每个进程分别获得5.5%（50%/9）CPU时间。而用户B的进程获取50% CPU时间
+			
+			一个调度组内的多个线程在不同cpu上跑(5.1一个调度组在多个CPU运行情况.png),调度组对应的se权重一样，参与到不同cpu上的cfs中计算运行时间，再分配到调度组内的线程
+
+			root调度组只包含cfs_rq，子调度组se指向上一级的se，cfs_rq指向下一级的cfs_rq
+			struct task_group {
+				struct cgroup_subsys_state 	css;
+				struct sched_entity			**se;                   			//指针数组，数组大小等于CPU数量，指向调度组自己的调度实体se
+				struct cfs_rq				**cfs_rq;               			//指针数组，数组大小等于CPU数量，指向调度组自己维护的cfs_rq
+				unsigned long				shares;                 			//调度组的权重
+				atomic_long_t				load_avg ____cacheline_aligned;    	//整个用户组的负载贡献总和
+				struct cfs_bandwidth		cfs_bandwidth;
+				/* ... */
+			}; 
+	
+	/****************************************/
+
+
+
+3、虚拟时间：
+	CFS调度器目标保证每个进程运行时间完全公平，因优先级的情况，进入虚拟时间，即CFS保证每个进程的虚拟时间都是一样的；
+	运行时间转换为虚拟时间公式(为避免浮点，先扩大后缩小)：
+									  NICE_O_LOAD(1024)
+		vtime = wall_time(实际运行) * ------------------							(nice为0的权重被称为NICE_0_LOAD)
+									  weight(进程权重)
+									   NICE_O_LOAD * 2^32                                               2^32
+			  = wall_time(实际运行) * (---------------------) >> 32				(引入inv_weight  = --------------)
+										  weight(进程权重)                                          weight(进程权重)
+			  = (wall_time(实际运行) * inv_weight) >> 32
+
+
+
+	权重集：
+	const int sched_prio_to_weight[40] = {
+	 /* -20 */     88761,     71755,     56483,     46273,     36291,
+	 /* -15 */     29154,     23254,     18705,     14949,     11916,
+	 /* -10 */      9548,      7620,      6100,      4904,      3906,
+	 /*  -5 */      3121,      2501,      1991,      1586,      1277,
+	 /*   0 */      1024,       820,       655,       526,       423,
+	 /*   5 */       335,       272,       215,       172,       137,
+	 /*  10 */       110,        87,        70,        56,        45,
+	 /*  15 */        36,        29,        23,        18,        15,
+	};
+
+	inv_weight = 2^32/weight	==>		sched_prio_to_wmult[i] = 2^32/sched_prio_to_weight[i]
+	const u32 sched_prio_to_wmult[40] = {
+	 /* -20 */     48388,     59856,     76040,     92818,    118348,
+	 /* -15 */    147320,    184698,    229616,    287308,    360437,
+	 /* -10 */    449829,    563644,    704093,    875809,   1099582,
+	 /*  -5 */   1376151,   1717300,   2157191,   2708050,   3363326,
+	 /*   0 */   4194304,   5237765,   6557202,   8165337,  10153587,
+	 /*   5 */  12820798,  15790321,  19976592,  24970740,  31350126,
+	 /*  10 */  39045157,  49367440,  61356676,  76695844,  95443717,
+	 /*  15 */ 119304647, 148102320, 186737708, 238609294, 286331153,
+	};
+
+
+
+4、运行时间：
+	分配给该线程应该运行的时间；
+	
+								se->load.weight(se的权重)
+		time = sched_period * -------------------------
+			  (调度周期/延迟)		cfs_rq->load.weight(就绪队列总的权重)
+
+	/****************************************/
+	调度组内的se应该运行时间：
+								se->load.weight(se的权重)					gse->load.weight (调度组内se的权重)
+		time = sched_period * -------------------------				*	-------------------------------------------------
+			  (调度周期/延迟)		cfs_rq->load.weight(就绪队列总的权重)			cfs_rq->load.weight(调度组的就绪队列总的权重)
+			  
+	/****************************************/
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

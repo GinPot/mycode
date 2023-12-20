@@ -1,5 +1,16 @@
+TLB entry里有什么？
+	TLB中不仅仅包含物理地址和虚拟地址，它还包含一些属性，例如：memory type、cache policies、access permissions、ASID、VMID
+		注:ASID - Address Space ID, VMID - Virtual Machine ID
+
+LB一致性
+	如果os修改了页表(entries)，那么os需要告诉TLB，invalid这些TLB entries，这是需要软件来做的. 指令如下:
+	TLBI <type><level>{IS} {, <Xt>}
+
+
+
 
 =============================================================================
+MMU的cache： 线程调度切换时需要考度到MMU的这个细节；因此MMU增加了一些特性(ASID、VMID)来支持调度
 
 TLB：Translation Lookaside Buffer
 

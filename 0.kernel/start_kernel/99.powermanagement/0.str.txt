@@ -1,0 +1,254 @@
+在系统进入str过程中会关闭中断，但会给具有唤醒能力的中断有 IRQD_WAKEUP_STATE 标志则设置IRQD_WAKEUP_ARMED标志位，不会disbale irq；
+IRQF_NO_SUSPEND的中断，只是不会disbale irq，不具备唤醒系统的能力；
+
+查看这次退出睡眠的唤醒源：
+cat /sys/power/pm_wakeup_irq
+
+使能唤醒中断源的打印信息，分别有GICv3和PM的打印信息./drivers/base/power/wakeup.c、./drivers/irqchip/irq-gic-v3.c
+echo 1 > /sys/module/msm_show_resume_irq/parameters/debug_mask
+	arch_initcall(gic_init_sys)
+		register_syscore_ops(&gic_syscore_ops)			//会注册syscore
+	echo Y > /sys/module/kernel/parameters/initcall_debug 通过这个命令可以看到syscore相关的调用
+
+打印freeze用户进程失败的信息：
+echo 1 > /sys/power/pm_debug_messages
+
+睡眠锁？因某个driver持有wakelock不放导致CPU无法睡下去？
+cat /sys/kernel/debug/wakeup_sources
+
+
+
+1、freeze时通过pm_freezing和pm_nosig_freezing全局变量来确认是需要freeze用户进程还是内核进程；
+	pm_freezing、system_freezing_cnt和pm_nosig_freezing，如果全为0，表示系统未进入冻结
+		1、system_freezing_cnt>0表示系统进入冻结
+		2、pm_freezing=true表示冻结用户进程
+		3、pm_nosig_freezing=true表示冻结内核线程和workqueue
+2、给用户线程发送signal，在用户进程返回用户空间时才会去freeze；内核线程直接freeze；
+3、内核线程和work_queue默认是不能被冻结的，少数内核线程和work_queue在创建时指定了freezable标志，这些任务需要对freeze状态进行判断，当系统进入freezing时，主动暂停运行:
+	1、通过唤醒内核线程，来让会调用try_to_freeze()的内核线程主动freeze；
+	2、内核线程阻塞在信号量、mutex 等内核同步机制上，不能解除阻塞；
+
+
+
+
+
+================================================================================================
+Linux内核提供了三种Suspen:
+echo freeze > /sys/power/state
+echo standby > /sys/power/state
+echo mem > /sys/power/state
+
+
+进入睡眠命令：
+echo mem > /sys/power/state										//FREEZER(进程冻结),DEVICES(设备休眠),PLATFORM(关闭不必要的中断),CPUS(关闭noboot cpu)，core(关闭cpu中断，通知cpus进入休眠处理流程)
+
+state_store()													//kernel/power/main.c
+	pm_suspend(state)
+		enter_state(state)
+			...
+			ksys_sync_helper()									// 888 同步文件系统
+			suspend_prepare(state)								// 888 冻结线程
+				__pm_notifier_call_chain(PM_SUSPEND_PREPARE, -1, &nr_calls);	//用途一：有些设备需要在freeze进程之前就suspend；用途二：如果有些设备的reseym动作需要较多的延时那么resume的时候会在进程恢复之前，会阻止所有进程的恢复？更有甚者需要设备等待某个进程的数据才能resume;
+				suspend_freeze_processes()						//并冻结用户空间进程和内核线程，运行完后就只有这个线程还活着，其他都已经freeze
+					freeze_processes()
+						pm_freezing = true						//表示用户进程需要被冻结
+						try_to_freeze_tasks(true)
+							freeze_task(p)
+								freezing(p)
+									freezing_slow_path(p)
+										if (pm_freezing && !(p->flags & PF_KTHREAD))
+											return true;		//只有用户进程会继续走freeze流程
+								fake_signal_wake_up(p)			//利用了信号处理机制，只设置任务的TIF_SIGPENDING位，但不传递任何信号，然后唤醒任务；这样任务在返回用户态时会进入信号处理流程，检查系统的freeze状态，并做相应处理
+					freeze_kernel_threads()
+						pm_nosig_freezing = true					//表示内核进程和 workqueue 被冻结
+							try_to_freeze_tasks(true)
+								freezing(p)
+									freezing_slow_path(p)
+										if (pm_nosig_freezing || cgroup_freezing(p))
+											return true;		//只有用户进程会继续走freeze流程
+								wake_up_state(p, TASK_INTERRUPTIBLE)	//唤醒不是阻塞在内核同步机制的内核线程，会制动调用try_to_freeze()的内核线程将freeze
+
+			suspend_devices_and_enter(state)					// 888 休眠外设，系统进入休眠，唤醒时从这返回
+				...
+				suspend_console()								//冻结串口控制台
+				...
+				dpm_suspend_start(PMSG_SUSPEND)
+					dpm_prepare(state)							// 888 执行各驱动中dev_pm_ops设备电源管理中的prepare函数
+						wait_for_device_probe()					//会先等待所有驱动probe完再继续往下走
+					dpm_suspend(state)							// 888 执行各驱动中dev_pm_ops设备电源管理中的suspend函数
+						device_suspend(dev)						// 从设备模型中获取其对应的回调函数，它会根据设备模型的层次逐步查询该设备在各个层次中的回调。其查询顺序为设备本身 设备类型 设备class 总线，当在某一层次获取到合法的回调函数，则查询操作完成
+							__device_suspend(dev, pm_transition, false)
+								dpm_run_callback(callback, dev, state, info)	// 888 执行各.suspend()函数，包括：外设驱动，电源域，总线等
+				...
+				suspend_enter(state, &wakeup)					// 888
+					platform_suspend_prepare(state)
+					dpm_suspend_late(PMSG_SUSPEND)
+					platform_suspend_prepare_late(state)
+					dpm_suspend_noirq(PMSG_SUSPEND)				// 888 关中断
+						cpuidle_pause()							//所有CPU退出idle
+						device_wakeup_arm_wake_irqs				// 888 如果struct wakeup_source的设备dev->power.can_wakeup && !!dev->power.wakeup(device_init_wakeup()和dev_pm_set_wake_irq())，会调用enable_irq_wake，使对应中断可以唤醒系统
+						suspend_device_irqs()					
+							for_each_irq_desc(irq, desc)		//循环所有中断
+								suspend_device_irq(desc)
+									if (!desc->action || irq_desc_is_chained(desc) || desc->no_suspend_depth)
+										return false;										// 888 若设置了IRQF_NO_SUSPEND的中断，则不会disbale irq，直接调跳出去
+									if (irqd_is_wakeup_set(&desc->irq_data))				// 888 判断是否有 IRQD_WAKEUP_STATE 标志
+										irqd_set(&desc->irq_data, IRQD_WAKEUP_ARMED)		//有的话就置 IRQD_WAKEUP_ARMED ，表示该中断可以唤醒系统
+										return true
+									desc->istate |= IRQS_SUSPENDED
+									__disable_irq(desc)										//其他的中断将置位IRQS_SUSPENDED，并disable
+							synchronize_irq(irq)				//等待该中断handler处理完
+						dpm_noirq_suspend_devices(state)		//到这里就处于noirq阶段了，有些驱动外设还需要处理写noirq的callback？，dev_pm_ops里有noirq的接口可以填充
+					suspend_disable_secondary_cpus()			// 888 关非0核
+					arch_suspend_disable_irqs();				//此时关闭的是irq controller和cpu的联系，在这个时候中断便不能唤醒cpu了
+						local_irq_disable()
+					syscore_suspend()							//调用sched_clock,timekeeping,irq_gc,qcom_wdtm,gic_suspend,cpu_pm_suspend等注册了 register_syscore_ops 相关调用
+						*wakeup = pm_wakeup_pending()			//write wakeup_count到调用pm_wakeup_pending这一段时间内，wakeup events framework会照常产生wakeup events；到这里检测睡眠锁是否有睡眠锁的唤醒事件，则在这处理唤醒系统
+						suspend_ops->enter(state);				//真正睡眠的函数,平台相关
+							psci_system_suspend_enter(state)	//./drivers/firmware/psci/psci.c，通过psci方式进入睡眠
+
+
+
+
+
+=================
+
+enable_irq_wake
+	irq_set_irq_wake(irq, 1)
+		irqd_set(&desc->irq_data, IRQD_WAKEUP_STATE)
+		
+=================
+
+IRQF_NO_SUSPEND
+
+request_threaded_irq
+	__setup_irq(irq, desc, action)
+		irq_pm_install_action(desc, new)
+			if (action->flags & IRQF_NO_SUSPEND)
+				desc->no_suspend_depth++
+	
+================================================================================================
+psci方式睡眠后，怎么检测唤醒中断？之前已经disable gic和cpu之间的联系；		或者gic还有什么其他event可以给到CPU唤醒wfi?  WFI wakeup events			或者这部分代码只是完成大核的睡眠，soc内部可能还有很多小核，psci陷入到高异常级别可能和管理soc的电源的小核通信然后大核才真正睡下去，电源管理小核继续收集其他核的睡眠状态，再最终整个soc睡下去，唤醒可能也是先小核接受(或查询)到中断，再逐各恢复
+假设el2或者el1有什么方式可以查询到中断则继续psci_system_suspend_enter()中退出
+psci_system_suspend_enter()
+	syscore_resume()											//恢复syscore，里面很多基础的依赖资源
+		arch_suspend_enable_irqs()								//使能中断，因为gic的中断还一直处于pinding状态，所以这里使能后才开始处理中断
+			主线程按照上面反向操作
+			...
+			dpm_resume_noirq(PMSG_RESUME)
+				dpm_noirq_resume_devices(state)					//会调用"noirq" resume callbacks，这个就是struct dev_pm_ops结构体的resume_noirq成员；这个是使能中断前需要先初始化好依赖的资料；如i2c驱动可能需要先配置寄存器初始化，再使能中断才能正常i2c通信
+				resume_device_irqs()							//使能中断
+					resume_irqs(false)
+						resume_irq(desc)						//循环唤醒所有irq
+							irqd_clear(&desc->irq_data, IRQD_WAKEUP_ARMED)		//清除 IRQD_WAKEUP_ARMED 标志
+							__enable_irq(desc)
+								irq_startup(desc, IRQ_RESEND, IRQ_START_FORCE)
+									irq_startup(desc, IRQ_RESEND, IRQ_START_FORCE)
+										check_irq_resend(desc)
+											tasklet_schedule(&resend_tasklet)	//触发tasklet软中断，调用唤醒源中断注册的中断handle
+												static DECLARE_TASKLET(resend_tasklet, resend_irqs, 0)
+													desc->handle_irq(desc)
+
+
+
+中断：
+	gic_handle_irq
+		__handle_domain_irq(gic_data.domain, irqnr, regs)
+			handle_fasteoi_irq
+				irq_may_run(desc)
+					if (!irqd_has_set(&desc->irq_data, IRQD_IRQ_INPROGRESS | IRQD_WAKEUP_ARMED))		//检测是否有 IRQD_WAKEUP_ARMED
+					irq_pm_check_wakeup(desc)
+						irqd_clear(&desc->irq_data, IRQD_WAKEUP_ARMED)									//清除 IRQD_WAKEUP_ARMED
+						desc->istate |= IRQS_SUSPENDED | IRQS_PENDING									//设置pingding
+						irq_disable(desc)																//关闭中断
+						pm_system_irq_wakeup(irq_desc_get_irq(desc))
+							pm_system_wakeup()
+					goto out																			//在这里没有执行中断的handler
+
+================================================================================================
+
+[   61.465153] Call trace:
+[   61.465171] dump_backtrace.cfi_jt+0x0/0x4
+[   61.465180] show_stack+0x18/0x24
+[   61.465186] dump_stack+0xb8/0x114
+[   61.465195] pm_system_irq_wakeup+0xa4/0xf4
+[   61.465203] irq_pm_check_wakeup+0x50/0x64
+[   61.465208] handle_fasteoi_irq+0x48/0x32c
+[   61.465214] __handle_domain_irq+0xa0/0x100
+[   61.465221] gic_handle_irq+0xb8/0x15c
+[   61.465225] el1_irq+0x104/0x200
+[   61.465230] arch_suspend_enable_irqs+0x8/0x10
+[   61.465235] suspend_devices_and_enter+0x158/0x4b4
+[   61.465240] enter_state+0x4a0/0x52c
+[   61.465244] pm_suspend+0x74/0xfc
+[   61.465250] state_store+0x124/0x158
+[   61.465256] kobj_attr_store+0x34/0x80
+[   61.465264] sysfs_kf_write+0x60/0xb8
+[   61.465269] kernfs_fop_write+0x124/0x1b8
+[   61.465275] __vfs_write+0x60/0x20c
+[   61.465280] vfs_write+0xe4/0x1a8
+[   61.465284] ksys_write+0x78/0xe4
+[   61.465289] __arm64_sys_write+0x1c/0x28
+[   61.465295] el0_svc_common+0xb4/0x19c
+[   61.465299] el0_svc_handler+0x74/0x98
+[   61.465303] el0_svc+0x8/0xc
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+==========================
+更新查看唤醒源的命令:
+ls -1 /sys/kernel/irq/ | while read irq; do
+                wakeup=`cat /sys/kernel/irq/$irq/wakeup`;
+                if [ "$wakeup"x == "enabled"x ]; then
+        cat /proc/interrupts | grep $irq":" 
+                fi
+done; cat /proc/interrupts | head -n 1;
+
+
+*睡眠失败：
+ 
+首先看wake source的释放，如果释放睡不了。再由BSP对kernel进行排查。有可能有些驱动，没有实现wakeup机制，或者suspend中不屏蔽中断，这类驱动需要注意。
+# 查看所有的wake source，从中找出没有释放的source。
+cat /d/wakeup_sources
+# 查看wakeup source active的trace。
+echo 1 > /sys/kernel/debug/tracing/events/power/wakeup_source_deactivate/enable
+echo 1 > /sys/kernel/debug/tracing/tracing_on
+cat /sys/kernel/debug/tracing/trace
+
+# 查看suspend失败的原因。
+cat /sys/kernel/debug/suspend_stats
+# 查看suspend_resume的trace。
+echo 1 > /sys/kernel/debug/tracing/events/power/suspend_resume/enable
+echo 1 > /sys/kernel/debug/tracing/tracing_on
+cat /sys/kernel/debug/tracing/trace
+
+
+
+
+*/d/wakeup_sources，active_count--上锁的次数，active_since--当前的wakelock已经持续的时间，total_time--这个锁开机以来一共lock的时间。所以当前只需要unlock active_since有数值的，系统就不可以休眠。系统唤醒会根据需要去lock对应的wakeup source。
+*休眠过程分为几个阶段，一个是APP的释放资源，wake unlock设置，并且freeze。单个lock释放是进入early suspend。二是驱动与系统进入到suspend，lock全部释放后，进入这个状态，深度休眠。
+*高通没有autosleep机制，sleep应该是pm_manager去管理。
+
+
+pr_info("GinPot: %s %s %s hwirq=%d irq=%d\n", desc->name,desc->action->name, desc->irq_data.chip->name,desc->irq_data.hwirq, desc->irq_data.irq);
+
+
+
+
+
+
+

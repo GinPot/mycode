@@ -14,6 +14,7 @@ static int kthread_test(void *data)
 		kthread_flag++;
 		printk("%s: kthread_flag=%d\n", __func__, kthread_flag);
 		msleep(1000);
+		try_to_freeze();										//在系统进入str时会唤醒内核线程，运行到这就会freeze改线程；若没有这样的调用的内核线程则不会freeze
 	}
 
 	pr_notice("%s: exit with not we want\n", __func__);
@@ -28,7 +29,7 @@ static int driver_kthread_init(void)
 	pthread_reciver = kthread_run(kthread_test, NULL, "kthread_test");
 	if (IS_ERR(pthread_reciver)) {
 		pr_notice("%s: creat thread failed\n", __func__);
-		return 0;
+		return IS_ERR(pthread_reciver);
 	}
 
 	pr_notice("%s: kthread_run ok\n", __func__);

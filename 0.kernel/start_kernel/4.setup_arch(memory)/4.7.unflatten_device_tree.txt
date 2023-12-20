@@ -1,0 +1,173 @@
+initial_boot_params:	保存设备树虚拟地址的全局变量
+
+
+|--------------------------------|offset: 0
+|			dtb head			 |
+|--------------------------------|offset: off_mem_rsvmap
+|			memreserve			 |
+|			 					 |
+|--------------------------------|offset: off_dt_struct
+|			dt struct			 |size: size_dt_struct
+|								 |
+|--------------------------------|offset: off_dt_strings
+|								 |
+|			dt strings			 |size: size_dt_strings
+|--------------------------------|
+
+
+设备树的head：
+struct fdt_header {
+	fdt32_t magic;			 		/* magic word FDT_MAGIC 0xd00dfeed*/
+	fdt32_t totalsize;		 		/* total size of DT block，所有数据的大小*/
+	fdt32_t off_dt_struct;		 	/* offset to structure， 根节点偏移位置； 接下来的数据为具体的属性参数，如数据格式： 令牌 + 属性的数据长度 + 属性名称字符串的偏移(加上off_dt_strings得到字符串的偏移位置)*/
+	fdt32_t off_dt_strings;		 	/* offset to strings 保存字符串(主要是属性名称)偏移位置*/
+	fdt32_t off_mem_rsvmap;		 	/* offset to memory reserve map */
+	fdt32_t version;		 		/* format version */
+	fdt32_t last_comp_version;	 	/* last compatible version */
+
+	/* version 2 fields below */
+	fdt32_t boot_cpuid_phys;		/* Which physical CPU id we're booting on */
+
+	/* version 3 fields below */
+	fdt32_t size_dt_strings;	 	/* size of the strings block */
+
+	/* version 17 fields below */
+	fdt32_t size_dt_struct;		 	/* size of the structure block */
+};
+
+struct fdt_node_header {//节点格式
+    fdt32_t tag;		//FDT_BEGIN_NODE
+    char name[0];		//node名称，作为额外数据以'\0'结尾的字符串形式存储在structure block 32-bits对齐，不够的位用0x0补齐；；；(零长数组一般用作结构体最后一个成员，用于访问该结构体对象之后的一段内存)
+};
+	fdt32_t tag;		//FDT_END_NODE
+
+struct fdt_property {	//属性数据格式
+    fdt32_t tag;		//令牌
+    fdt32_t len;    	//表示property value的长度 */   
+    fdt32_t nameoff;	//property的名称存放在string block区域，nameoff表示其在string block的偏移 */    
+    char data[0];		//property value值，作为额外数据以'\0'结尾的字符串形式存储structure block 32-bits对齐，不够的位用0x0补齐
+};
+
+属性数据格式： 
+	令牌；
+	属性的数据长度；
+	属性名称字符串的偏移(加上off_dt_strings得到字符串的偏移位置)
+
+五种令牌：
+	FDT_BEGIN_NODE(0x00000001)：	标识一个node的开始
+	FDT_END_NODE(0x00000002)：	标识一个node的结束
+	FDT_PROP(0x00000003)：		标识node中property(属性)的开始
+	FDT_NOP(0x00000004)：		所有的设备树解析程序都会忽略该令牌，一般用于覆盖树中的属性或者节点，以将其从树中删除。
+	FDT_END(0x00000005)：		标识structure block区域的结束
+
+
+
+
+	for (offset = 0; offset >= 0 && depth >= initial_depth; offset = fdt_next_node(blob, offset, &depth))					//offset从0开始，fdt_next_tag()得到下一个offset
+			fdt_next_tag()			
+				fdt_offset_ptr()			
+					fdt_offset_ptr_();			
+						return (const char *)fdt + off_dt_struct + offset			
+
+
+
+		
+===================================================================================================================			
+			
+unflatten_device_tree()			
+	__unflatten_device_tree(initial_boot_params, NULL, &of_root, early_init_dt_alloc_memory_arch, false);	
+	
+		size = unflatten_dt_nodes(blob, NULL, dad, NULL);																			//第一次调用，后面三个参数都为NULL
+			for (offset = 0; offset >= 0 && depth >= initial_depth; offset = fdt_next_node(blob, offset, &depth))					//以节点为单位循环计算
+			{			
+				if (!populate_node(blob, offset, &mem, nps[depth], &nps[depth+1], dryrun))											//上面第二个参数为NULL，对应这的mem为NULL的地址，即为0，从0开始根据blob计算大小
+					pathp = fdt_get_name(blob, offset, &l);																			//获取节点name首地址保存到pathp，及name长度l
+				np = unflatten_dt_alloc(mem, sizeof(struct device_node) + allocl, __alignof__(struct device_node))					//计算struct device_node+name长度的空间
+				populate_properties(blob, offset, mem, np, pathp, dryrun);
+					for (cur = fdt_first_property_offset(blob, offset); cur >= 0; cur = fdt_next_property_offset(blob, cur))		//以属性为单位循环计算
+							if ((offset = fdt_check_node_offset_(fdt, nodeoffset)) < 0)													
+								(fdt_next_tag(fdt, offset, &offset) != FDT_BEGIN_NODE)												//跳过节点name
+							nextprop_(fdt, offset)																					//获取属性offset
+						val = fdt_getprop_by_offset(blob, cur, &pname, &sz);														//获取属性的name、namelen、val
+						unflatten_dt_alloc(mem, sizeof(struct property), __alignof__(struct property))								//计算struct property所需要的空间
+			}
+
+		unflatten_dt_nodes(blob, mem, dad, mynodes);																				//第二次调用，向mem中填充数据
+			for (offset = 0; offset >= 0 && depth >= initial_depth; offset = fdt_next_node(blob, offset, &depth))					//节点为单位循环
+			{
+				populate_node(blob, offset, &mem, nps[depth], &nps[depth+1], dryrun)
+					pathp = fdt_get_name(blob, offset, &l)																			//从offset得到节点name、namelen
+					np = unflatten_dt_alloc(mem, sizeof(struct device_node) + allocl, __alignof__(struct device_node))				//计算struct device_node空间，并后续填充数据
+					...
+					of_node_init(np);																								//为每个struct device_node结构体初始化kobj，及fwnode.ops
+					populate_properties(blob, offset, mem, np, pathp, dryrun);
+						pprev = &np->properties;																					//属性都放在节点结构体的这个单链表中
+						for (cur = fdt_first_property_offset(blob, offset); cur >= 0; cur = fdt_next_property_offset(blob, cur))	//属性为单位循环
+						{
+							val = fdt_getprop_by_offset(blob, cur, &pname, &sz);													//获取属性
+							pp = unflatten_dt_alloc(mem, sizeof(struct property), __alignof__(struct property))						//计算struct property空间
+							...																										//填充属性结构体
+							
+							if (!has_name)
+								unflatten_dt_alloc(mem, sizeof(struct property) + len, __alignof__(struct property));				//每个节点最后的一条属性为：属性的value为此节点name的属性
+						}
+				...
+				
+				if (!dryrun && nodepp && !*nodepp)
+					*nodepp = nps[depth+1];																							//of_root指向根节点
+				if (!dryrun && !root)																								//root指向根节点
+					root = nps[depth+1];
+			}
+
+	of_alias_scan(early_init_dt_alloc_memory_arch)
+		of_aliases = of_find_node_by_path("/aliases")		//找到aliases对应的节点
+		of_chosen = of_find_node_by_path("/chosen");		//找到chosen对应的节点
+		if (of_chosen)
+			if (of_property_read_string(of_chosen, "stdout-path", &name))		//取标准输入输出串口name
+				of_property_read_string(of_chosen, "linux,stdout-path", &name)		
+			if (name)
+				of_stdout = of_find_node_opts_by_path(name, &of_stdout_options)	//通过别名或者全路径找到串口的节点和参数字符
+		for_each_property_of_node(of_aliases, pp)								//解析别名节点的每个属性
+			if (!strcmp(pp->name, "name") || !strcmp(pp->name, "phandle") || !strcmp(pp->name, "linux,phandle"))		//跳过不需要处理的属性
+			continue
+			np = of_find_node_by_path(pp->value)			//通过别名的值获取对应的节点
+		while (isdigit(*(end-1)) && end > start)			//确定属性name的数字字符的位置
+			end--;
+		len = end - start									//len为去除数字字符的长度
+		
+		kstrtoint(end, 10, &id)								//获取别名的ID数字号
+		...
+		of_alias_add(ap, np, id, start, len)
+			ap->np = np										//保留节点信息
+			ap->id = id										//保留别名ID
+			strncpy(ap->stem, stem, stem_len)				//保留除ID的别名name
+			list_add_tail(&ap->link, &aliases_lookup)		//把该节点的信息加入到aliases_lookup链表中 888
+
+
+
+
+
+
+
+==========================================================================================================
+
+设备树展开后得到指向struct device_node结构体的指针of_root(根节点)，虚拟地址通过memblock申请使用，同级节点、子节点、属性都保存在结构体的单链表中
+
+struct device_node {
+    const char *name;－－－－－－－－－－－－－－－－－－－－－－－device node name
+    const char *type;－－－－－－－－－－－－－－－－－－－－－－－对应device_type的属性
+    phandle phandle;－－－－－－－－－－－－－－－－－－－－－－－对应该节点的phandle属性
+    const char *full_name; －－－－－－－－－－－－－－－－－－－－从“/”开始的，表示该node的full path
+
+    struct    property *properties;－－－－－－－－－－－－－－－该节点的属性列表
+    struct    property *deadprops; －－－－－－－－－－－－－－－如果需要删除某些属性，kernel并非真的删除，而是挂入到deadprops的列表
+    struct    device_node *parent;－－－－－－－－－－－－－－－parent、child以及sibling将所有的device node连接起来
+    struct    device_node *child;
+    struct    device_node *sibling;
+    struct    device_node *next;－－－－－－－－－－－－－－－－通过该指针可以获取相同类型的下一个node
+    struct    device_node *allnext;－－－－－－－－－－－－－－通过该指针可以获取node global list下一个node
+    struct    proc_dir_entry *pde;－－－－－－－－－－－－－－－开放到userspace的proc接口信息
+    struct    kref kref;－－－－－－－－－－－－－－－－－－－－该node的reference count
+    unsigned long _flags;
+    void    *data;
+};

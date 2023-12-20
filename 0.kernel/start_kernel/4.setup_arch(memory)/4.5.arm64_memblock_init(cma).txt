@@ -1,0 +1,246 @@
+
+1、memblock先是通过dtb得到系统内存，然后把系统不能使用的内存添加到reserve(dtb、_text、initrd(ramdisk), dtb中对应的fdt_header->off_mem_rsvmap, reserved-memory节点)中
+2、读取设备树先将reserved-memory节点的内存信息存入reserved_mem数组中
+3、再从reserved_mem数组中取出内存信息，判断有效性，处理内存重叠，设置到memblock的reserved或remove中(no-map属性节点内存将memblock_remove)
+4、RESERVEDMEM_OF_DECLAR定义的CMA等特殊内存的特殊处理
+5.处理其他内存相关reserved内存，如crashkernel、elfcorehdr；
+6.设置系统默认的cma内存:
+	(1)该信息默认从defconfig得到size(默认32M)后再去memblock中申请；
+	(2)也可以从cmline中设置；
+	(3)亦或是设备树中配置.
+
+
+memblock_remove		：	系统不知道有这部分内存，														/sys/kernel/debug/memblock/memory 节点不会记录，memblock.memory
+memblock_add		：	可以被memblock管理分配的内存，即记录可以管理的内存，已经使用的就分配到reserve中		/proc/iomem	可以查看所有系统知道的内存包括寄存器地址信息，System RAM内存应该就是除memblock_remove以外的所有内存，memblock.memory
+memblock_reserve	：	已经被使用或者被分配的内存														/sys/kernel/debug/memblock/mreserved 节点会记录：在memblock_alloc过程中也表示已经被使用的内存，memblock.reserved
+
+struct memblock {
+	bool bottom_up;  /* is bottom up direction? */
+	phys_addr_t current_limit;
+	struct memblock_type memory;
+	struct memblock_type reserved;								for_each_reserved_mem_region(i, &start, &end)获取所有reserved内存范围
+};
+
+for_each_reserved_mem_region(i, &start, &end){
+    pr_info("GinPot: i=%lld start=0x%llx end=0x%llx", i, start, end);					//打印reserve内存
+}
+
+for_each_free_mem_range(i, NUMA_NO_NODE, MEMBLOCK_NONE, &start, &end,NULL){
+    pr_info("GinPot: i=%lld start=0x%llx end=0x%llx", i, start, end);					//打印总的内存减去reserve的内存
+ }
+
+/*****************************************************************************************************************************************/
+
+
+
+
+
+#define PHYS_OFFSET		({ VM_BUG_ON(memstart_addr & 1); memstart_addr; })
+#define __phys_to_virt(x)	((unsigned long)((x) - PHYS_OFFSET) | PAGE_OFFSET)		//物理地址相对起始地址的偏移，或上起始虚拟线性地址0xffff800000000000，得到虚拟地址
+
+
+
+#define ARM64_MEMSTART_SHIFT		PUD_SHIFT
+#define ARM64_MEMSTART_ALIGN	(1UL << ARM64_MEMSTART_SHIFT)	(1<<30)
+
+
+
+
+
+
+arm64_memblock_init();
+	const s64 linear_region_size = -(s64)PAGE_OFFSET;								//得到虚拟地址线性映射区域大小,0x800000000000
+
+	fdt_enforce_memory_region();													//获取dtb的linux,usable-memory-range节点属性，H5无
+	
+	memblock_remove(1ULL << PHYS_MASK_SHIFT, ULLONG_MAX);							//移除起始地址(1<<48)后面的物理地址
+	
+	BUILD_BUG_ON(linear_region_size != BIT(VA_BITS - 1));							//虚拟线性区为内核虚拟地址的一半，即1<<47
+
+	memstart_addr = round_down(memblock_start_of_DRAM(), ARM64_MEMSTART_ALIGN);		//物理内存地址向下1G对齐,memstart_addr=0x40000000, memblock_start_of_DRAM=0x40000000
+
+	memblock_remove(max_t(u64, memstart_addr + linear_region_size, __pa_symbol(_end)), ULLONG_MAX);			//移除(物理起始地址+虚拟线性区)为起始地址后的地址,max_t=0x800040000000
+
+	if (memstart_addr + linear_region_size < memblock_end_of_DRAM()) {				//一般不会有这么大的内存，有的话也把0~(memblock_end_of_DRAM() - linear_region_size)向上1G对齐的空间移除
+		/* ensure that memstart_addr remains sufficiently aligned */
+		memstart_addr = round_up(memblock_end_of_DRAM() - linear_region_size,
+					 ARM64_MEMSTART_ALIGN);
+		memblock_remove(0, memstart_addr);
+	}
+
+	if (memory_limit != PHYS_ADDR_MAX) {											//未设置最大内存限制
+		memblock_mem_limit_remove_map(memory_limit);
+		memblock_add(__pa_symbol(_text), (u64)(_end - _text));
+	}
+	
+/*****************************************************************************************************************************************/
+	
+	if (IS_ENABLED(CONFIG_BLK_DEV_INITRD) && phys_initrd_size){
+		memblock_remove(base, size); /* clear MEMBLOCK_ flags */
+		memblock_add(base, size);
+		memblock_reserve(base, size);												//把initrd内存添加到 reserve的memory中；remove的内存相当于no map；之前在fixmap中已经 reserve 了dtb物理地址
+	}
+
+	if (IS_ENABLED(CONFIG_RANDOMIZE_BASE)){
+		...																			//如果使能，且虚拟地址的线性区比实际物理地址大，线性区域也随机化
+	}
+
+	memblock_reserve(__pa_symbol(_text), _end - _text);								//内核_text对应的物理地址添加到 reserve
+	if (IS_ENABLED(CONFIG_BLK_DEV_INITRD) && phys_initrd_size) {					//定义CONFIG_BLK_DEV_INITRD,并且设置了initrd
+		/* the generic initrd code expects virtual addresses */
+		initrd_start = __phys_to_virt(phys_initrd_start);							//计算得到initrd起始、结束的虚拟地址
+		initrd_end = initrd_start + phys_initrd_size;
+	}
+
+	early_init_fdt_scan_reserved_mem()
+		...
+		early_init_dt_reserve_memory_arch(base, size, 0);							//从dtb的header中获取off_mem_rsvmap得到reserv memory添加到 reserve 中
+		of_scan_flat_dt(__fdt_scan_reserved_mem, NULL);
+			if (!found && depth == 1 && strcmp(uname, "reserved-memory") == 0)		//遍历所有深度为1的节点名字是否是reserved-memory
+				if (__reserved_mem_check_root(node) != 0)							//确定节点有#size-cells、#address-cells、ranges属性
+				...
+			if (!of_fdt_device_is_available(initial_boot_params, node))				//确定节点有效性status=ok/okay，或者没有status,然后退出，下次进来就是这个节点的子节点
+				return 0;
+			err = __reserved_mem_reserve_reg(node, uname);
+				...																	//获取节点属性(内存地址、大小，是否nomap)
+				early_init_dt_reserve_memory_arch(base, size, nomap)				//然后对应的remove、reserve内存,这些region可以从节点中获取确定的起始地址和size
+				fdt_reserved_mem_save_node(node, uname, base, size)					//同时把节点信息加入到全局数组 reserved_mem[reserved_mem_count] 中 888 仅仅先把需要reserved内存放在全局数组中还没放到memblock中
+			if(err == -ENOENT && of_get_flat_dt_prop(node, "size", NULL))			//如果该节点没有reg信息，且有size信息
+				fdt_reserved_mem_save_node(node, uname, 0, 0);						//把节点信息保存到全局数组reserved_mem中，base和size设置0
+	
+		fdt_init_reserved_mem()
+			__rmem_check_for_overlap();												//检测reserved区是否有重叠，不处理，仅报错
+			for (i = 0; i < reserved_mem_count; i++)								//遍历reserved_mem数组
+				err = __reserved_mem_alloc_size(node, rmem->name, &rmem->base, &rmem->size);			//根据节点的size，从memblock中找一段大小为size的内存去reserved或remove
+					prop = of_get_flat_dt_prop(node, "alloc-ranges", &len);			//节点有alloc-ranges属性时，从这个属性参数中找size操作
+					...
+					early_init_dt_alloc_reserved_memory_arch()						//根据节点的size，从memblock中找一段大小为size的内存去reserved或remove
+						if (nomap)
+							return memblock_remove(base, size);
+						memblock_reserve(base, size)								//实际还是通过memblock设备这部分reserved-memory内存
+						
+				err = __reserved_mem_init_node(rmem);								// 888 从__reservedmem_of_table段中读取of_device_id结构体数组信息，看是否匹配reserved_mem数组的节点compatible，匹配的话
+																					//就调用对应的函数，一般由RESERVEDMEM_OF_DECLARE定义compatible和函数，如compatible = "shared-dma-pool"节点的CMA内存处理
+	
+	arm64_dma_phys_limit = max_zone_dma_phys();										//取32位最大值或者物理内存的最大值，H5上等于 memblock_end_of_DRAM()
+	
+	reserve_crashkernel();															//启动参数中设置”crashkernel=“的内存将会memblock_reserve，内核panic后会生成vmcore，可以gdb？
+	reserve_elfcorehdr();															//设备树节点linux,elfcorehdr内存将会memblock_reserve，作用？？
+
+	high_memory = __va(memblock_end_of_DRAM() - 1) + 1;								// high_memory ？
+
+	dma_contiguous_reserve(arm64_dma_phys_limit)									// 1、设置系统默认cma内存，并设置为reserved memblock；  内存信息从启动参数中获取，或者defconfig中设置size(默认32M)，由memblock alloc去申请
+		cma_declare_contiguous(base, size, limit, 0, 0, fixed, "reserved", res_cma)	// 2、若设备树中有compatible = "shared-dma-pool"节点信息，并且设置了linux,cma-default属性，则用设备树中的内存信息设置为默认的cma内存，并设置为reserved memblock；
+			...
+			if (fixed)
+				memblock_reserve(base, size)										// cmdline中设置的话就直接设置memblock_reserve
+			...
+			addr = memblock_phys_alloc_range(size, alignment, highmem_start, limit)	// defconfig默认配置cma的情况下从memblock高地址开始取，取完后设置memblock_reserve
+			if (!addr)
+				addr = memblock_phys_alloc_range(size, alignment, base, limit)		// 上面失败的情况下从低位地址开始取，取完后设置memblock_reserve
+
+/*****************************************************************************************************************************************/
+
+
+保留内存主要是：
+1、设备树占用内存；
+2、内核代码占用内存；
+3、CMA占用内存；
+4、内核代码内存与链接虚拟地址的页表、内存和内核线性虚拟地址的页表占用的内存；
+5、保存设备树和别名的结构体占用的内存；
+6、记录NUMA、pg_data_t、 mem_section、page占用的内存，及内存和VMEMMAP_START虚拟建立页表占用的内存；
+7、保存内存信息resource结构体占用的内存；
+8、保存cmdline占用的内存；
+9、per_cpu先关占用的内存；
+
+
+cat /sys/kernel/debug/memblock/reserved
+
+   0: 0x0000000046080000..0x0000000046f93fff (0)			//保存内核代码占用的内存
+		start_kernel()->setup_arch()->arm64_memblock_init()->memblock_reserve(__pa_symbol(_text), _end - _text)
+
+   1: 0x000000007bf25000..0x000000007bf2afff (-1)			//保存设备树占用的内存
+		start_kernel()->setup_arch()->setup_machine_fdt(__fdt_pointer)->fixmap_remap_fdt(dt_phys)->memblock_reserve(dt_phys, size)
+
+   2: 0x000000007ca00000..0x000000007cbfffff (15)			// 3级映射，2M粒度；page物理地址和VMEMMAP_START虚拟建立映射时，最后2M大小不够，重新从memblock中申请了2M ？？？
+		start_kernel()->setup_arch()->bootmem_init()->sparse_init()->sparse_init_nid()->sparse_mem_map_populate()->vmemmap_populate()->vmemmap_alloc_block_buf()->vmemmap_alloc_block()
+   3: 0x000000007cdde000..0x000000007dbfffff
+		0x7cdde000 - 0x7cddf000				 (14)			// 同下
+		0x7cddf000 - 0x7cde0000				 (13)			// 给struct page申请的物理地址和VMEMMAP_START虚拟地址建立页表时给页表申请的内存
+		0x7cde0000 - 0x7dde0000				 (12)			// 先申请，没有用完的后续释放(接着(15),这里剩余不足2M，所有后续释放掉了)；申请一个mem_section中所有(262144,256K*map_count)个struct page(64)结构体需要的内存(总共16M内存)，地址存在sparsemap_buf全局指针上；后续和VMEMMAP_START虚拟地址建立页表映射；目前是通过这个虚拟地址++pfn来访问page地址
+			start_kernel()->setup_arch()->bootmem_init()->sparse_init()->sparse_init_nid()->sparse_buffer_init()
+			start_kernel()->setup_arch()->bootmem_init()->sparse_init()->sparse_init_nid()->sparse_buffer_fini()
+   4: 0x000000007dd85500..0x000000007dd85a07 (30)			//per_cpu???
+   5: 0x000000007dd85a40..0x000000007dd85fc7 (23)			//per_cpu???
+   6: 0x000000007dd86000..0x000000007ddddfff
+		0x7dd86000 - 0x7ddde000				 (22)			//per_cpu???
+		0x7ddde000 - 0x7dddf000				 (21)			//per_cpu???
+		0x7dddf000 - 0x7dde0000				 (20)			//per_cpu???
+   7: 0x000000007dde0080..0x000000007dde00f8 (24)			//per_cpu???
+   8: 0x000000007dde0100..0x000000007dde015f (24)			//per_cpu???
+   9: 0x000000007dde0180..0x000000007dde0378
+		0x7dde0180 - 0x7dde0300				 (29)			//per_cpu???
+  10: 0x000000007dde0380..0x000000007dde049f
+		0x7dde0300 - 0x7dde0379				 (28)			//per_cpu???		
+		0x7dde0380 - 0x7dde0480				 (27)			//per_cpu???
+		0x7dde0480 - 0x7dde049f				 (26)			//per_cpu???
+  11: 0x000000007dde04c0..0x000000007dde04cf (25)			//per_cpu???
+  12: 0x000000007dde0500..0x000000007dde0507 (24)			//per_cpu???
+  13: 0x000000007dde0540..0x000000007dde061e (19)			// 同下
+  14: 0x000000007dde0640..0x000000007dde071e (18)			// 同下
+  15: 0x000000007dde0740..0x000000007dde081e (17)			// 申请保存cmdline的内存
+		start_kernel()->setup_command_line()->memblock_alloc()
+  16: 0x000000007dde0840..0x000000007dde500f
+		0x7dde0840 - 0x7dde1840				 (10)			// 接着下面操作，因为只有1G内存，所有第二维数组申请大小256*16=4096=0x1000;mem_section结构体用于管理所有内存
+			start_kernel()->setup_arch()->bootmem_init()->memblocks_present()->memory_present()->sparse_index_init()->sparse_index_alloc()->memblock_alloc_node()
+		0x7dde1840 - 0x7dde3840				 (9)			// struct mem_section用一个二维数组指针管理，第一维大小固定(NR_SECTION_ROOTS=1024)，第二维个数是根据有几个1G的内存申请几个 SECTIONS_PER_ROOT=256大小；
+			start_kernel()->setup_arch()->bootmem_init()->memblocks_present()->memory_present()->memblock_alloc(size, align)
+		0x7dde3840 - 0x7dde5000				 (8)			// 用于记录内存node(NUMA)的 pg_data_t 结构体地址
+			start_kernel()->setup_arch()->bootmem_init()->arm64_numa_init()->numa_init()->numa_register_nodes()->setup_node_data(nid, start_pfn, end_pfn)->memblock_phys_alloc_try_nid()
+		0x7dde5000 - 0x7dde500f				 (7)			// 用来记录多个NUMA离本NUMA节点的距离信息数组
+			start_kernel()->setup_arch()->bootmem_init()->arm64_numa_init()->numa_init()->numa_alloc_distance()->memblock_find_in_range()
+  17: 0x000000007dde5040..0x000000007dde5047 (23)			//per_cpu???
+  18: 0x000000007dde5080..0x000000007dde51eb
+		0x7dde5080 - 0x7dde50c0				 (16)			// 申请struct resource结构体内存用于保存当前内存信息；
+			start_kernel()->setup_arch()->request_standard_resources()->memblock_alloc(res_size, SMP_CACHE_BYTES)
+		0x7dde50c0 - 0x7dde51c0				 (11)			// mem_section->pageblock_flags指针指向的内存256字节
+			start_kernel()->setup_arch()->bootmem_init()->sparse_init()->sparse_init_nid()->sparse_early_usemaps_alloc_pgdat_section()
+		0x7dde51c0 - 0x7dde51ec			 	 (6) 			// 同下，该系统有3条别名； ???(字符串最后1字节的“\0”空间去掉)
+  19: 0x000000007dde51f0..0x000000007dde521e (5)			// 同下，该系统有3条别名；
+  20: 0x000000007dde5220..0x000000007dde5250 (4)			// 把设备树中别名的信息存入struct alias_prop结构体所占用的空间
+		start_kernel()->setup_arch()->unflatten_device_tree()->of_alias_scan()->early_init_dt_alloc_memory_arch()
+  21: 0x000000007dde5258..0x000000007fffffff
+		0x7dde5258 - 0x7ddfd000				 (3)			// 把设备树信息存入struct device_node结构体所需要的空间
+			start_kernel()->setup_arch()->unflatten_device_tree()->__unflatten_device_tree()->early_init_dt_alloc_memory_arch()
+		0x7ddfd000 ~ 0x7e000000				 (2)			// 2056K, 这部分在start_kernel()->setup_arch()->paging_init()时，重新建立内核代码和其虚拟地址的页表是申请的页表内存，和内存映射到内核线性映射区PAGE_OFFSET的页表内存，每次申请4K
+																	1G内存有252144个4K，页表中每4K占8个字节，252144*8/1024=1969.875K
+		0x7e000000 - 0x7fffffff				 (1)			//保存cma占用的内存： 1,设备树中设置的话就直接memblock_reserve(base, size); 2,cmdline或deconfig这只则在 memblock_phys_alloc_range()中线申请后memblock_reserve
+			2.1,设备树： start_kernel()->setup_arch()->arm64_memblock_init()->early_init_fdt_scan_reserved_mem()->fdt_init_reserved_mem()->__reserved_mem_alloc_size()->early_init_dt_alloc_reserved_memory_arch()->memblock_reserve(base, size)
+			2.2,cmdline或deconfig： start_kernel()->setup_arch()->arm64_memblock_init()->dma_contiguous_reserve(arm64_dma_phys_limit)->memblock_phys_alloc_range(size, alignment, highmem_start, limit)->memblock_reserve(base, size)
+         
+*(1):表示从memblock系统中申请内存的顺序
+
+
+减去上面reserved后可以用的内存：1073741824
+[    0.000000] GinPot: i=4294967296 start=0x40000000 end=0x46080000
+[    0.000000] GinPot: i=8589934592 start=0x46f34000 end=0x7bf25000
+[    0.000000] GinPot: i=12884901888 start=0x7bf2b000 end=0x7ca00000
+[    0.000000] GinPot: i=17179869184 start=0x7cc00000 end=0x7cdde000
+[    0.000000] GinPot: i=21474836480 start=0x7dc00000 end=0x7dd85500
+[    0.000000] GinPot: i=25769803776 start=0x7dd85a08 end=0x7dd85a40
+[    0.000000] GinPot: i=30064771072 start=0x7dd85fc8 end=0x7dd86000
+[    0.000000] GinPot: i=34359738368 start=0x7ddde000 end=0x7dde0080
+[    0.000000] GinPot: i=38654705664 start=0x7dde00f9 end=0x7dde0100
+[    0.000000] GinPot: i=42949672960 start=0x7dde0160 end=0x7dde0180
+[    0.000000] GinPot: i=47244640256 start=0x7dde0379 end=0x7dde0380
+[    0.000000] GinPot: i=51539607552 start=0x7dde04a0 end=0x7dde04c0
+[    0.000000] GinPot: i=55834574848 start=0x7dde04d0 end=0x7dde0500
+[    0.000000] GinPot: i=60129542144 start=0x7dde0508 end=0x7dde0540
+[    0.000000] GinPot: i=64424509440 start=0x7dde061f end=0x7dde0640
+[    0.000000] GinPot: i=68719476736 start=0x7dde071f end=0x7dde0740
+[    0.000000] GinPot: i=73014444032 start=0x7dde081f end=0x7dde0840
+[    0.000000] GinPot: i=77309411328 start=0x7dde5010 end=0x7dde5040
+[    0.000000] GinPot: i=81604378624 start=0x7dde5048 end=0x7dde5080
+[    0.000000] GinPot: i=85899345920 start=0x7dde51ec end=0x7dde51f0
+[    0.000000] GinPot: i=90194313216 start=0x7dde521f end=0x7dde5220
+[    0.000000] GinPot: i=94489280512 start=0x7dde5251 end=0x7dde5258

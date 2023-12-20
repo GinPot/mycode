@@ -1,0 +1,105 @@
+
+
+
+
+
+
+
+
+
+
+
+slab： 理论基础;管理元数据多，复杂性较高，不适用大内存系统或嵌入式系统；
+slob： 针对内存小的嵌入式系统进行了优化，代码量小，分配效率上略差于slab；
+slub： 对slab重新设计了代码，设计思想一致，大小内存系统都能有很好的表现，已经完全取代上面2种方案；
+
+
+======================================================================================================================================
+
+#define ARCH_DMA_MINALIGN       (128)
+#define ARCH_KMALLOC_MINALIGN ARCH_DMA_MINALIGN
+
+
+ifeq ($(CONFIG_KASAN_SW_TAGS), y)
+KASAN_SHADOW_SCALE_SHIFT := 4
+else
+KASAN_SHADOW_SCALE_SHIFT := 3
+endif
+#define ARCH_SLAB_MINALIGN	(1ULL << KASAN_SHADOW_SCALE_SHIFT)				//1 << 3 = 8
+
+
+
+
+mm_init()
+	static __initdata struct kmem_cache boot_kmem_cache, boot_kmem_cache_node;					//静态定义这两个结构体用于初始化早期的slub，初始化完成后会创建新的object给这两个结构体用，并回收这部分静态定义的内存
+	...
+	kmem_cache_node = &boot_kmem_cache_node;
+	kmem_cache = &boot_kmem_cache;
+
+	create_boot_cache(kmem_cache_node, "kmem_cache_node", sizeof(struct kmem_cache_node), SLAB_HWCACHE_ALIGN, 0, 0);
+		...																						//填充kmem_cache结构体信息
+		s->align = calculate_alignment(flags, ARCH_KMALLOC_MINALIGN, size)						//设置内存对齐参数
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+======================================================================================================================================
+
+
+管理多个缓存块(slab)的结构体，创建时会设置其管理的缓存块(object)大小(该size需要经过2次对齐)；其中有3级缓存管理：
+
+object有8bytes、16bytes、32bytes、64bytes、…、8192bytes等大小；所有很多大小不同的kmem_cache结构体，每次申请内存时先根据需要申请的大小调用不同kmem_cache结构体进行分配，仍然存在object使用不充分情况；
+如: 申请33字节时，将会分配64字节内存，浪费了31字节;(若存在33字节的kmem_cache将不会有浪费)
+
+	申请内存：
+		1、刚创建kmem_cache结构体时，没有object可供分配，只能先从buddy申请一个slab给到一级缓存链表；
+		2、申请内存时，一级缓存链表有空间的object，则直接分配，更新相关链表跳过已经使用的object；
+		3、随着内存申请，一级缓存没有空闲object后：
+			3.1、这个时候二级、三级缓存应该都还没有object，需要等到一个没有空闲的slab释放除了object才会把这个slab先放入到二级缓存中，数量一定多后再放入到三级缓存中，又一定多后释放回给buddy
+			3.2、若二级、三级缓存都没有可以用的object是，重新向buddy申请一个slab挂到一级缓存中，之前没有空闲的slab将不再有人管理；
+			3.3、若二级缓存有可用的object，则从二级缓存链表中取object分配；若二级没有，三级有可用的object，则从三级中分配；
+	释放内存：
+		1、object释放到一级缓存链表中直接释放更新链表就完事；
+		2、object释放到全是已经使用的slab中，则会将slab挂载到二级缓存中；或直接释放到二级缓存链表中
+			2.1、当二级缓存空闲的object数量超过 cpu_partial，将会把第二缓存所有的slab都移动到第三缓冲中；
+		3、object释放到三级缓存时，或者2.1情况；
+			3.1、级缓存空闲的object数量超过 min_partial，将会全空闲的slab释放到buddy中；
+	
+	
+struct kmem_cache {
+	struct kmem_cache_cpu __percpu *cpu_slab;
+	...
+	unsigned long min_partial;														//三级缓存空闲的object数量超过这个值时，将会全空闲的slab释放到buddy中；
+	unsigned int size;	/* The size of an object including metadata */				//object的大小，经过了两次对齐后的值
+	...
+	unsigned int offset;	/* Free pointer offset */								//指针内置式的指针距离object首地址的偏移，偏移的地址保存下一个object的地址
+	...
+	unsigned int cpu_partial;														//二级缓存空闲的object数量超过这个值，将会把第二缓存所有的slab都移动到第三缓冲中；
+	struct kmem_cache_order_objects oo												//低16bit代表一个slab中所有的object数量(oo & ((1 << 16) - 1)), 高16bit代表一个slab管理的page数量； object不一定能被page数量整除，所以会有空余无法使用的空间
+	...
+	unsigned int inuse;		/* Offset to metadata */								//size第一次按照word对齐后的大小
+	unsigned int align;		/* Alignment */											//size第二次需要对齐的值
+	...
+	struct kmem_cache_node *node[MAX_NUMNODES];										//三级缓存，所有cpu共享；没有空闲的object将从buddy中申请一个缓存块(slab)，申请后将直接挂入一级缓存
+};
+
+struct kmem_cache_cpu {
+	void **freelist;	/* Pointer to next available object */						//一级缓存，per-cpu链表管理；没有空闲的object将从二级缓存中分配
+	...
+	struct page *partial;	/* Partially allocated frozen slabs */					//二级缓存，per-cpu链表管理；没有空闲的object将从三级缓存中分配
+};
+

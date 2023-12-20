@@ -221,10 +221,10 @@ MODULE_LICENSE("GPL");
 /*
 dts:
 	irq_test_pins: irq-test-pins {
-			pins = "PL3";
-			function = "gpio_in";
-			drive-strength = <16>;
-			bias-pull-down;
+		pins = "PL3";
+		function = "gpio_in";
+		drive-strength = <16>;
+		bias-pull-down;
 	}
 
 	irq_test {
@@ -234,7 +234,7 @@ dts:
 		pinctrl-0 = <&irq_test_pins>;
 
 		interrupts-extended = <&r_pio 0 3 GPIO_ACTIVE_HIGH>,		//最新获取中断方法platform_get_irq(pdev, index);第二个参数为这个属性的第几个中断
-							  <&gic GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>;//中断控制器后面的参数个数根据中断控制器节点#interrupt-cells决定
+							  <&gic GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>;//&gic指中断控制器的节点，其后面的参数个数根据中断控制器节点#interrupt-cells决定
 
 		//先获取GPIO，再gpio_to_irq得到中断号
 		//gpios = <&r_pio 0 3 GPIO_ACTIVE_HIGH>; 					// GPIOL3  of_get_gpio(pdev->dev.of_node, 0);第二个参数为dts中<>里面(可以写多个GPIO)的index

@@ -18,6 +18,8 @@
 #include <linux/wait.h>
 #include <linux/poll.h>
 
+#include <linux/dmaengine.h>
+
 #define DEV_MAJOR	0					//设置0，即用动态分配的
 #define DEV_MINOR	0
 #define DEV_NAME	"driver_test"		//该name好像没啥用
@@ -157,7 +159,7 @@ static __poll_t DriverTestPoll(struct file *file, struct poll_table_struct *wait
 	
 	pr_notice("%s: enter \n", __func__);
 	
-	poll_wait(file, &pollwait, wait);		//wait_event_interruptible(pollwait, pollFlag);//将当前进程放入等待队列pollwait中
+	poll_wait(file, &pollwait, wait);		//只是将当前进程放入等待队列pollwait中，在do_select()后续操作中会调用高精度定时器睡眠非抢占调度
 	if(pollFlag){
 		pollFlag = 0;
 		masks |= POLLIN | POLLRDNORM;
@@ -166,6 +168,15 @@ static __poll_t DriverTestPoll(struct file *file, struct poll_table_struct *wait
 	
 	return masks;
 }
+/*
+do_select
+	vfs_poll(f.file, wait)
+		DriverTestPoll
+	poll_schedule_timeout(&table, TASK_INTERRUPTIBLE, to, slack)
+		schedule_hrtimeout_range(expires, slack, HRTIMER_MODE_ABS)
+			schedule()
+*/
+
 
 static int DriverTestFasync(int fd, struct file *file, int on)
 {
@@ -202,9 +213,41 @@ static const struct file_operations fops = {
 
 
 static char sysBuf[10]={0};
+/*
+反汇编：
+	gcc -S -o main.s main.c
+	objdump -s -d main.o > main.o.txt
+	objdump -j .text -ld -C -S main.o > main.o.txt
+	objdump -s -d main > main.txt
+*/
+/*
+	char aa[]= "aaaaaaaaaaa";			定义了一个数组,编译的时候会将字符串保存在rodata段中，代码运行的时候将radata对应的内容复制到aa对应的栈地址上;
+	char *c = "cccccccccccc";			定义了一个指针,编译的时候会将字符串保存在rodata段中，c指向rodata的一个只读地址(程序加载的时候自动申请分配的虚拟地址),所以无法修改
+
+*/
+
 static ssize_t DriverSysGetValue(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	kill_fasync(&fasync, SIGIO, POLL_IN);			//发生信号给进程
+//uevent测试
+//	char *error_event[] = {NULL, NULL};				//这里字符串是只读，操作不了error_event的地址和字符串的地址也不是连续的;同时也发现；需要后面重新申请个内存替换，再来修改
+//	int ret;
+//	char id[] = "vdo";
+//	char char_err[] = "xxx_vfat_partition_abnormal";
+//	
+//	memcpy(char_err, id, 3);
+//	error_event[0] = char_err;
+//	//pr_info("%s: error_event=%s vddr=0x%lx 0x%lx 0x%lx len=%d\n", __func__, error_event[0], error_event, error_event[0], &error_event[0][0], sizeof(id));
+//
+//	pr_info("%s: error_event=%s\n", __func__, error_event[0]);
+//	ret = kobject_uevent_env(&driverDev->kobj, KOBJ_CHANGE, error_event);					
+//	if(ret != 0)
+//		pr_info("%s: kobject_uevent_env error ret=-%d\n", __func__, ret);
+//	else
+//		pr_info("%s: kobject_uevent_env success\n", __func__);
+
+
+
+	//kill_fasync(&fasync, SIGIO, POLL_IN);											//发生信号给进程,用于fasync测试
 
 	return sprintf(buf, "%s", sysBuf);
 }
@@ -212,11 +255,12 @@ static ssize_t DriverSysGetValue(struct device *dev, struct device_attribute *at
 static ssize_t DriverSysSetValue(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	pollFlag = 1;
-	wake_up_interruptible(&pollwait);   /* 唤醒休眠的进程 */
+	//wake_up_interruptible(&pollwait);   											//唤醒休眠的进程，用于poll测试
 	
 	return sprintf(sysBuf, "%s", buf);
 }
 
+//			/sys/devices/virtual/driverClass/driverTest/syschar
 static DEVICE_ATTR(syschar, S_IRUGO | S_IWUSR, DriverSysGetValue, DriverSysSetValue);
 
 static int DriverTestInit(void)
@@ -306,6 +350,51 @@ module_init(DriverTestInit);
 module_exit(DriverTestExit);
 
 
+
+/*
+struct attribute {
+	const char		*name;					// 888 对应文件节点名字
+	umode_t			mode;
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+	bool			ignore_lockdep:1;
+	struct lock_class_key	*key;
+	struct lock_class_key	skey;
+#endif
+};
+struct device_attribute {
+	struct attribute	attr;
+	ssize_t (*show)(struct device *dev, struct device_attribute *attr,
+			char *buf);
+	ssize_t (*store)(struct device *dev, struct device_attribute *attr,
+			 const char *buf, size_t count);
+};
+
+*/
+/*
+poll睡眠流程主要在do_select()函数中：
+
+在一个循环中对每个需要监听的设备调用它们自己的 poll 支持函数(内核最终会相应调用 poll_wait()， 
+把当前进程添加到相应设备的等待队列上，然后将该应用程序进程设置为睡眠状态)以使得当前进程被加入各个设备的等待队列。
+
+若当前没有任何被监听的设备就绪，则内核进行调度（调用 schedule）让出 cpu 进入阻塞状态，
+超时schedule 返回时将再次循环检测是否有操作可以进行，如此反复；若有任意一个设备就绪，调用wake up 唤醒用户当前进程，select/poll 便立即返回，
+用户进程获得了可读或可写的fd。
+
+
+
+do_select()函数核心过程：
+
+1、poll_initwait()：
+	设置poll_wqueues->poll_table的成员变量poll_queue_proc为__pollwait函数；同时记录当前进程task_struct记在pwq结构体的polling_task。
+2、f_op->poll()：
+	会调用poll_wait()，进而执行上一步设置的方法__pollwait();
+   __pollwait()：
+	设置wait->func唤醒回调函数为pollwake函数，并将poll_table_entry->wait加入等待队列
+3、poll_schedule_timeout()：该进程进入带有超时的睡眠状态
+	之后，当其他进程就绪事件发生时便会唤醒相应等待队列上的进程。比如监控的是可写事件，
+	则会在write()方法中调用wake_up方法唤醒相对应的等待队列上的进程，当唤醒后执行前面设置的唤醒回调函数pollwake函数。
+
+*/
 
 /*
 大内核锁(BKL):

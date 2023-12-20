@@ -36,6 +36,10 @@
 11、抢占preempt
 	见99.context.txt
 
+irq_disable(desc)			禁止GIC发送某个irq信号
+local_irq_disable()			禁止运行这个函数当前cpu的所有的中断，不接受gic控制器的所有中断信号
+	msr	daifset, #2		// arch_local_irq_disable",			888 da_f几个位使能，单独屏蔽irq的中断
+
 
 linux kernel采取了统一的策略：
 基本函数名字是一样的，只不过需要调用者自己加锁保护的那个函数需要增加__的前缀，
@@ -326,7 +330,16 @@ gic_handle_irq()
 								cond_unmask_eoi_irq(desc, chip)													//写EOI第二步：GIC_CPU_DEACTIVATE;active切到inactive或Active and pending,该cpu的中断将重新打开
 	
 			irq_exit();
-	
+				account_irq_exit_time(current)
+					irqtime_account_irq(tsk)
+						delta = sched_clock_cpu(cpu) - irqtime->irq_start_time									//计算在中断中花了多长时间
+						irqtime->irq_start_time += delta														//irq_start_time设为最新时间
+						...
+						irqtime_account_delta(irqtime, delta, CPUTIME_IRQ)										//重点用delta更新重点是使用时间
+							cpustat[CPUTIME_IRQ] += delta;
+							irqtime->total += delta;
+							irqtime->tick_delta += delta;
+						irqtime_account_delta(irqtime, delta, CPUTIME_SOFTIRQ)
 	if (irqnr < 16)
 		handle_IPI(irqnr, regs)																					//arch\arm64\kernel\smp.c
 			switch (ipinr) {

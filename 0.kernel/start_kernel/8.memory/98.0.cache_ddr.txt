@@ -1,0 +1,163 @@
+
+
+1, 每个核都有自己的L1 I cache、L1 D cache;
+2, 每个cluster都有一个L2 cache;
+3, 多个cluster都有同一个L3 cache(只有一个cluster可能就没有L3);
+
+
+
+cache工作方式(一般都是第一种)：
+	1, inclusive cache: 某一地址的数据可能存在多级缓存中(同时在L1,L2中)；
+	2, exclusive cache： 某一地址的数据缓存只会存在于多级cache其中一级。也就是说，任意地址的数据不可能同时在L1和L2 cache中缓存
+
+cache映射方式：
+	1, 直接映射(如98.3.直接映射.jpg);	依次访问0x00,0x04,0x08地址时会发生cache颠簸;
+	2, 多路组相连(如98.4.多路组相连.jpg);	1中的问题颠簸可能性减小; 但硬件设计复杂和成本都会增加;
+	3, 全相连映射(如98.5.全相连映射.jpg);	性能更好,但硬件设计复杂和成本更高：
+	综合一般情况用第2中方案;
+
+	如L1 I cache size为32kb, cache line为32Bytes, 4路组相连, 每路8KB, 一共256组；
+	内核默认虚拟地址位宽为48bit(实际), 则offset占用5bit, index占用8bit, tag占用35bit;
+	如98.6.四路组相连.jpg对照, cpu发送一个地址
+		1.首先从地址的bit[5~12]确定index, 从256个组中找到对应的组;
+		2.bit[13~47]的tag找到对应的哪路,tag比较之前选确定V是否有效,再进行对比，对比的结果就是cache是否hit,硬件可实现四路并行查找;				tag array也是一段存储空间,所以cache line是以多字节一个line,不会是1个字节1个line
+		3.最后通过bit[0~4]找到offset;cache line还有个D表示数据是否修改,置1表示有修改需要写回同步给DDR;
+		
+	cache line的大小是cache控制器和DDR之间数据传输的最小单位,因为一个cache line只有一个bit位来记录是否修改
+	linux系统映射最小单位是页,一页大小一般是4KB
+
+cache更新策略：
+	1, 写直通模式(write-throuth)，写操作时，数据同时写入当前高速缓存、下级高速缓存、主存储器；
+	2, 回写模式(write-back)，写操作时，数据写入cache时会更新cache line的D对应的bit来记录数据已经被修改; 后续再cache line被替换或者显示的cache clean操作时更新到ddr中; 这个模式下就会存在cache和ddr数据不一致的情况
+
+
+=========================================================================================================
+
+cache查找方法：
+
+1、VIVT： 虚拟高速缓存;	虚拟地直接发送到cache控制器，如果cache hit直接返回数据给cpu, 如果miss则把虚拟地址发送给MMU转换为物理地址后再访问读取数据到cache，再给cpu;
+	优点：
+		1、hit时不经过mmu速度更快;
+		2、硬件设计简单易于实现;
+	缺点：
+		1、歧义： 2个app中可能存在相同的虚拟地址指向不同的物理地址,app1读取addr1的数据时cache缓存了addr1的数据,但切到app2时用同样的虚拟地址访问会hit读取到addr1的数据,而不是addr2的数据; 
+			1.2、解决方案是进程切换时flush所有cache： 把已修改的数据写回ddr,再无效cache;
+		2、别名：	内存共享使不同的虚拟地址指向相同的物理地址,这个物理地址的数据会缓存到2个cache line中, 当一个被修改,回写模式下另一个不会及时更新; 
+			2.2、内存共享时采用nocache方式有映射,也是写直通模式,但损失了cache的性能;
+			2.3、进程切换时flush所有cache
+			
+		缺点主要是需要系统来维护处理歧义、别名问题，导致性能下降;
+
+		歧义	是2个相同的虚拟地址只用了一个cache line来保存2个不同的物理地址数据； 	避免需要：使得相同的虚拟地址分别用2个cache line来保存数据
+		别名 是2个不同的虚拟地址用了2个cache line来保存同一个物理地址数据；			避免需要：2个不同的虚拟地址用同1个caceh line来保存数据
+
+2、PIPT:	物理高速缓存： 虚拟地址先经过MMU转换为物理地址, 物理地址给cache控制器确认是否命中
+	优点:
+		1、软件层面基本不需要维护;
+	缺点：
+		1、硬件设计复杂,成本高;
+		2、需要先经过MMU转换再查找cache,性能上没有VIVT高
+
+
+
+3、VIPT: 物理标记的虚拟高速缓存： 取虚拟地址的index给cache查找的同时又把虚拟地址给MMU转换; cache找到对应的组后MMU也转换完成了，然后去物理地址的tag来确认cache是否命中,最后取偏移;命中的话直接给cpu,没有命中则从DDR中读取的cache line再给cpu
+	优点：
+		1、性能上好于PIPT;
+		2、物理地址的tag取页表大小剩余的位数(如32位系统上页表4KB，则tag[12~31]),这样tag就是唯一的物理地址,不会存在歧义;									虚拟地址一样那bit[0~11]也是一样，说明一页内的4kb物理地址偏移一样;物理地址不同，所以不同处是大于4kb的地址位；所以在虚拟地址转换为物理地址后取的tag也将不同，这样对应2个cache line，所以可以避免歧义；
+			也就是虚拟地址取正常的offset和index；
+			转换后的物理地址取bit12~bit31作为tag(物理地址不同处一定是大于4K的部分)；
+		3、多路组相连高速缓存情况下, 页表4KB情况下有12bit的唯一地址，index+offset也只有12bit时,就不会存在别名;	(不能满足这样的情况下一般采用PIPT)			index+offset唯一，然后虚拟地址转换为物理地址后tag有会是一样，所以指向同一个cache line
+			在建立共享映射时，软件上通过将虚拟地址按照一路cache大小对齐来取虚拟地址的方式在避免别名问题，即通过多路组相连的颠簸问题来避免别名；
+		优点就是通过取物理地址的位数和优化多路组相连结构的情况下来避免歧义和别名;
+		多数cpu都采用VIPT
+
+
+
+
+
+
+
+https://zhuanlan.zhihu.com/p/102293437
+https://zhuanlan.zhihu.com/p/107096130?tdsourcetag=s_pctim_aiomsg
+
+
+
+==========================================================================================================
+检测cache的类型(如VIPT),获取cpu一些特性,或需要应用什么erratum的patch
+
+start_kernel()
+	smp_prepare_boot_cpu()
+		cpuinfo_store_boot_cpu()
+			__cpuinfo_store_cpu(info)									//将读取cpu的信息保存在percpu的结构体info中
+				...
+				cpuinfo_detect_icache_policy(info)
+					pr_info("Detected %s I-cache on CPU%d\n", icache_policy_str[l1ip], cpu);		//打印当前cpu的cache查找方法,如VIPT
+			init_cpu_features(&boot_cpu_data)
+				...
+				init_cpu_hwcaps_indirect_list()
+					init_cpu_hwcaps_indirect_list_from_array(arm64_features);
+					init_cpu_hwcaps_indirect_list_from_array(arm64_errata);
+				setup_boot_cpu_capabilities()
+					update_cpu_capabilities(SCOPE_BOOT_CPU | SCOPE_LOCAL_CPU);
+						pr_info("detected: %s\n", caps->desc)										//arm64_features和arm64_errata中若有适配当前cpu的话这将打印出来
+					enable_cpu_capabilities(SCOPE_BOOT_CPU);										//然后设置
+
+
+==========================================================================================================
+H5的：
+	512KiB L2-Cache
+	32KiB (Instruction) / 32KiB (Data) L1-Cache per core
+	cache line size为64字节
+
+
+
+#define CTR_CWG_SHIFT		24
+#define CTR_CWG_MASK		15
+
+
+cache_line_size()																
+	u32 cwg = cache_type_cwg();
+		return (read_cpuid_cachetype() >> CTR_CWG_SHIFT) & CTR_CWG_MASK				//对应的值为4(0100)
+			read_cpuid(CTR_EL0)
+	return cwg ? 4 << cwg : ARCH_DMA_MINALIGN										//4再左移上面读出来的值
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

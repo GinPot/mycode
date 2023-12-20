@@ -56,7 +56,8 @@ ENTRY(vectors)
 														do_dentry_open(file, d_backing_inode(path->dentry), NULL)
 															open = f->f_op->open
 															open(inode, f)
-		
+			...
+			ret_to_user
 
 
 

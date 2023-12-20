@@ -17,7 +17,7 @@
 	local_bh_disable()
 	local_bh_enable()
 
-3、禁止线程抢占：
+3、禁止线程抢占：			//正常禁止抢占，使能抢占时，会调用__schedule(true)来检测是否有调度的需求
 	preempt_disable();
 	preempt_enable();
 	
@@ -48,7 +48,7 @@ struct task_struct {
 }
 
 
-preempt_count数据格式：
+preempt_count 数据格式：
 
 	 -------------------------------------------------------------------------------
 	|  Reserved bit  | 21bit | 20bit |  16-19bit  |   9-15bit   | 8bit |   0-7bit   |

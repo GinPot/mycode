@@ -1,0 +1,54 @@
+
+
+
+#define ALTINSTR_ENTRY(feature,cb)					      \
+	" .word 661b - .\n"				/* label           */ \
+	" .if " __stringify(cb) " == 0\n"				      \
+	" .word 663f - .\n"				/* new instruction */ \
+	" .else\n"							      \
+	" .word " __stringify(cb) "- .\n"		/* callback */	      \
+	" .endif\n"							      \
+	" .hword " __stringify(feature) "\n"		/* feature bit     */ \
+	" .byte 662b-661b\n"				/* source len      */ \
+	" .byte 664f-663f\n"				/* replacement len */
+
+#define __ALTERNATIVE_CFG(oldinstr, newinstr, feature, cfg_enabled, cb)	\
+	".if "__stringify(cfg_enabled)" == 1\n"				\
+	"661:\n\t"							\
+	oldinstr "\n"							\
+	"662:\n"							\
+	".pushsection .altinstructions,\"a\"\n"				\
+	ALTINSTR_ENTRY(feature,cb)					\
+	".popsection\n"							\
+	" .if " __stringify(cb) " == 0\n"				\
+	".pushsection .altinstr_replacement, \"a\"\n"			\
+	"663:\n\t"							\
+	newinstr "\n"							\
+	"664:\n\t"							\
+	".popsection\n\t"						\
+	".org	. - (664b-663b) + (662b-661b)\n\t"			\
+	".org	. - (662b-661b) + (664b-663b)\n"			\
+	".else\n\t"							\
+	"663:\n\t"							\
+	"664:\n\t"							\
+	".endif\n"							\
+	".endif\n"
+
+#define _ALTERNATIVE_CFG(oldinstr, newinstr, feature, cfg, ...)	\
+	__ALTERNATIVE_CFG(oldinstr, newinstr, feature, IS_ENABLED(cfg), 0)
+
+#define ALTERNATIVE(oldinstr, newinstr, ...)   \
+	_ALTERNATIVE_CFG(oldinstr, newinstr, __VA_ARGS__, 1)
+
+#define __msr_s(r, v)						\
+	DEFINE_MSR_S						\
+"	msr_s " __stringify(r) ", " v "\n"			\
+	UNDEFINE_MSR_S
+
+asm volatile(ALTERNATIVE(
+	"msr	daifset, #2		// arch_local_irq_disable",			888 da_f几个位使能，单独屏蔽irq的中断
+	__msr_s(SYS_ICC_PMR_EL1, "%0"),
+	ARM64_HAS_IRQ_PRIO_MASKING)
+	:
+	: "r" ((unsigned long) GIC_PRIO_IRQOFF)
+	: "memory");

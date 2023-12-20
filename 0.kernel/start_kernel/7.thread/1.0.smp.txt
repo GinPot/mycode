@@ -1,0 +1,555 @@
+1、boot cpu的task_struct结构体在init\init_task.c中静态创建，在汇编阶段就会把栈、task_struct等信息设置到对应cpu寄存器中；
+2、其他cpu则是在startup之前有boot cpu创建idle线程作为改cpu的第一个线程；
+
+3、boot cpu init_mm(mm_struct)的页表信息先用init_pg_dir和idmap_pg_dir做mmu使能的平滑切换，后面在 setup_arch()会切到使用 swapper_pg_dir；
+4、其他cpu在汇编阶段直接用swapper_pg_dir和idmap_pg_dir使能mmu，进入C语言阶段直接把idle线程的active_mm指向 init_mm(内核进程的内存信息都是使用init_mm结构体中的信息)；
+
+============
+
+0、各驱动模块先通过 cpuhp_setup_xx结构注册相关函数(主要就是填充 cpuhp_hp_states 结构体数组,注册时并不会运行)，然后再下面2个阶段依次逐个调用；
+
+核启动弄相关动作重要的结构体 cpuhp_hp_states[]:
+1、第一阶段： bringup时从 CPUHP_OFFLINE-->CPUHP_BRINGUP_CPU 执行相关 puhp_hp_states->startup.single 回调
+2、第二阶段： 核唤醒后运行 secondary_start_kernel()->notify_cpu_starting(),会从CPUHP_BRINGUP_CPU-->CPUHP_AP_ONLINE 执行相关的 puhp_hp_states->startup.single 回调
+3、第二阶段：
+	3.1.boot cpu调用 CPUHP_BRINGUP_CPU 回调后将会睡眠等待wait_for_completion_timeout，将在唤醒cpu的secondary_start_kernel中唤醒boot cpu； 主要等待cpun起来正常运行
+	3.2.boot cpu在3唤醒后又会调用wait_for_ap_thread睡眠等待，将在唤醒cpu的secondary_start_kernel中再次唤醒boot cpu； 主要等待cpun进入idle，且会把status设置 CPUHP_AP_ONLINE_IDLE
+	3.3.boot cpu在3唤醒后又会调用wait_for_ap_thread睡眠等待，睡眠之前会唤醒热拔插线程，热拔插线程中会再次将 CPUHP_AP_ONLINE_IDLE->CPUHP_ONLINE ,然后唤醒boot cpu； 最终完成核唤醒，接着唤醒下一个cpu
+4、唤醒核的同时创建了该核的idle(即运行 secondary_start_kernel 的线程)、热拔插线程；
+
+
+
+
+
+
+
+for_each_possible_cpu(cpu)		//在smp_init之前就可以知道当前soc有几个核,通过dts获取的？
+for_each_online_cpu(cpu)		//当前在线的核
+for_each_present_cpu(cpu)		//当前存在的核？多数情况下等于在线核
+
+获取当前cpu id：
+smp_processor_id()
+
+==========================================================================================================
+
+
+	cpus {
+		#address-cells = <0x1>;
+		#size-cells = <0x0>;
+
+		cpu@0 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			reg = <0x0>;
+			enable-method = "psci";
+		};
+
+		cpu@1 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			reg = <0x1>;
+			enable-method = "psci";
+		};
+		...
+	};
+
+	psci {
+		compatible = "arm,psci-0.2";
+		method = "smc";
+	};
+
+
+
+==========================================================================================================
+ATF
+
+sync_exception_aarch64																					//所有BL31操作都从这里开始，arm-trusted-firmware-master\bl31\aarch64\bl31_entrypoint.S
+	_exception_vectors=runtime_exceptions																//这是el3中断向量，arm-trusted-firmware-master\bl31\aarch64\runtime_exceptions.S
+		sync_exception_aarch64																			//低异常进入高异常
+			sync_exception_aarch64
+				smc_handler64
+					...																					//从rt_svc_descs段中找到std_svc_smc_handler所在的位置
+					blr	std_svc_smc_handler
+						psci_smc_handler(smc_fid, x1, x2, x3, x4, cookie, handle, flags)				//根据function id处理各种服务
+					
+							psci_cpu_on()																//开核
+								 psci_plat_pm_ops->pwr_domain_on(target_cpu)
+									sunxi_pwr_domain_on(target_cpu)										//arm-trusted-firmware-master\plat\allwinner\common\sunxi_scpi_pm.c
+
+==========================================================================================================
+linux
+
+start_kernel
+	setup_arch																							// arch/arm64/kernel/setup.c
+		psci_dt_init
+			np = of_find_matching_node_and_match()														//根据psci节点的compatible找到对应of_device_id结构体
+			psci_0_2_init(np);
+				get_set_conduit_method(np)																//根据method属性设置invoke_psci_fn = __invoke_psci_fn_smc，进入smc是调用的函数
+				psci_probe()
+					psci_get_version()																	//获取psc固件版本
+					psci_0_2_set_functions()															//填充提供给上层关于psci相关设置的接口如cpu on/off，suspend等
+						psci_function_id[PSCI_FN_CPU_ON] = PSCI_FN_NATIVE(0_2, CPU_ON);
+						psci_ops.cpu_on = psci_cpu_on;
+
+	arch_call_rest_init
+		rest_init
+			kernel_init
+				kernel_init_freeable
+					smp_init()
+						idle_threads_init()																//为当前cpu初始化idle线程，即运行 secondary_start_kernel 的线程
+							for_each_possible_cpu(cpu)
+								if (cpu != boot_cpu)
+									idle_init(cpu)														// 888 为非boot cpu创建idle线程，0号线程作为boot cpu的idle线程所以不用创建
+										tsk = fork_idle(cpu)
+										per_cpu(idle_threads, cpu) = tsk								//把tsk保存到全局变量中idle_threads
+						cpuhp_threads_init()															// 888 为当前cpu创建热拔插线程cpuhp/%u,处理热拔插的动作
+						...
+						for_each_present_cpu(cpu)
+							if (!cpu_online(cpu))
+								cpu_up(cpu)
+									do_cpu_up(cpu, CPUHP_ONLINE)
+										try_online_node(cpu_to_node(cpu))
+										_cpu_up(cpu, 0, CPUHP_ONLINE)
+											...
+											cpuhp_set_state(st, target)										//把这个cpu对应的cpuhp_cpu_state信息的target设置为CPUHP_ONLINE
+											...
+											cpuhp_up_callbacks(cpu, st, CPUHP_BRINGUP_CPU)					// 888 从CPUHP_CREATE_THREADS到 CPUHP_BRINGUP_CPU
+												cpuhp_invoke_callback(cpu, st->state, true, NULL, NULL)		//先创建绑定该核的内核线程(如ksoftirqd)，再bringup核
+													bringup_cpu(cpu)==>(cpuhp_hp_states + CPUHP_BRINGUP_CPU)//最后调用 cpuhp_hp_states[CPUHP_BRINGUP_CPU]->startup.single
+														struct task_struct *idle = idle_thread_get(cpu)		//获取上面创建的idle线程结构体
+														__cpu_up(cpu, idle)									//arch/arm64/kernel/smp.c
+															...
+															secondary_data.task = idle						//把idle线程信息存放在全局变量中，cpun起来的汇编阶段会从这个全局变量中找到cpun他的idle线程信息
+															secondary_data.stack = task_stack_page(idle) + THREAD_SIZE
+															...
+															boot_secondary(cpu, idle)
+																cpu_psci_cpu_boot(cpu) ==> cpu_psci_ops.cpu_boot(cpu) ==> cpu_ops[cpu]->cpu_boot(cpu)
+																psci_cpu_on(cpu_logical_map(cpu), __pa_symbol(secondary_entry)) ==> psci_ops.cpu_on(cpu_logical_map(cpu), __pa_symbol(secondary_entry))
+																	__invoke_psci_fn_smc(PSCI_0_2_FN_CPU_ON, cpu, secondary_entry, 0, 0, 0, 0, &res)
+															...
+															wait_for_completion_timeout(&cpu_running, msecs_to_jiffies(1000))		//boot cpu在这等待cpun up，将在secondary_start_kernel中唤醒boot cpu
+															...
+														bringup_wait_for_ap(cpu)
+															wait_for_ap_thread(st, true)											//boot cpu第二次睡眠等待，为了等待cpun进入idle
+															...
+															kthread_unpark(st->thread)												//唤醒这个cpun的热拔插线程；激活没有真正的运行？？
+															...
+															cpuhp_kick_ap(st, st->target)											//cpun的目标要到 CPUHP_ONLINE
+																__cpuhp_kick_ap(st)
+																	st->should_run = true
+																	wake_up_process(st->thread)										//唤醒这个cpun的热拔插线程；？？
+																	wait_for_ap_thread(st, st->bringup)								//boot cpu第三次睡眠等待
+															
+					...
+					smp_cpus_done(setup_max_cpus)
+						setup_cpu_features()															//CPU特性检测
+						hyp_mode_check()																//确定从哪个异常级别启动
+
+
+
+
+
+secondary_entry																							// arch\arm64\kernel\head.S
+	el2_setup																							//el2降到el1
+	secondary_startup
+		__secondary_switched
+			...
+			adr_l	x0, secondary_data																	//设置这个cpu的idle线程的堆栈和页面
+			ldr	x1, [x0, #CPU_BOOT_STACK]
+			mov	sp, x1
+			ldr	x2, [x0, #CPU_BOOT_TASK]
+			msr	sp_el0, x2
+			
+			secondary_start_kernel																		// arch\arm64\kernel\smp.c
+				struct mm_struct *mm = &init_mm
+				current->active_mm = mm																	//所有内核线程，所有cpu在内核中都用的init_mm的内存空间信息
+				...
+				cpuinfo_store_cpu()																			//记录CPU信息
+					__cpuinfo_store_cpu(info)
+						cpuinfo_detect_icache_policy(info)
+							pr_info("Detected %s I-cache on CPU%d\n", icache_policy_str[l1ip], cpu)
+				...																							//从汇编到C一系列的CPU初始化：使能MMU，设置异常向量表，设置栈，使能中断、timer等
+				notify_cpu_starting(cpu)																	//Enable GIC and timers
+					while (st->state < CPUHP_AP_ONLINE)
+						cpuhp_invoke_callback(cpu, st->state, true, NULL, NULL)									// 888 调用cpuhp_hp_states结构体中注册的 热拔插 回调函数初始化各模块如GIC and timers
+				...
+				pr_info("CPU%u: Booted secondary processor 0x%010lx [0x%08x]\n", cpu, (unsigned long)mpidr, read_cpuid_id())
+				...
+				complete(&cpu_running); 																	// 888 唤醒主处理器的 完成等待函数，继续启动下一个从处理器
+				cpu_startup_entry(CPUHP_AP_ONLINE_IDLE); 													//ｉｄｌｅ进程进入ｉｄｌｅ状态
+					cpuhp_online_idle(state)
+						st->state = CPUHP_AP_ONLINE_IDLE													//把state设置为 CPUHP_AP_ONLINE_IDLE，后续在热拔插线程中会切换到CPUHP_ONLINE
+						complete_ap_thread(st, true)														// 888 唤醒boot cpu的第二次睡眠
+					do_idle()
+
+
+
+
+软中断线程创建：
+cpuhp_setup_state_nocalls(CPUHP_SOFTIRQ_DEAD, "softirq:dead", NULL, takeover_tasklets);		//在移除cpu时，调用takeover_tasklets清空tasklet的链表
+硬中断初始化：
+cpuhp_setup_state_nocalls(CPUHP_AP_IRQ_GIC_STARTING, "irqchip/arm/gic:starting", gic_starting_cpu, NULL)
+timer处理函数注册：
+cpuhp_setup_state(CPUHP_AP_ARM_ARCH_TIMER_STARTING, "clockevents/arm/arch_timer:starting", arch_timer_starting_cpu, arch_timer_dying_cpu)
+
+
+
+======================================================
+static struct smp_hotplug_thread cpuhp_threads = {
+	.store			= &cpuhp_state.thread,
+	.create			= &cpuhp_create,
+	.thread_should_run	= cpuhp_should_run,
+	.thread_fn		= cpuhp_thread_fun,
+	.thread_comm		= "cpuhp/%u",
+	.selfparking		= true,
+};
+smpboot_register_percpu_thread(&cpuhp_threads)
+
+smpboot_thread_fn										//热拔插线程
+	while(1){
+		if(!cpuhp_should_run)							//若不需要运行则直接schedule()
+			schedule()
+		else
+			cpuhp_thread_fun()
+				...
+				st->should_run = (st->state < st->target)		//当前state小于目标target则需要继续运行
+				st->result = cpuhp_invoke_callback(cpu, state, bringup, st->node, &st->last)
+				...
+				if (!st->should_run)
+					complete_ap_thread(st, bringup)				//不需要运行则唤醒第三次睡眠的boot cpu
+	}
+	
+		
+======================================================	
+boot cpu线程在init\init_task.c中静态创建：
+struct task_struct init_task									//汇编阶段会把该物理地址设置到sp_el0寄存器中
+	.stack		= init_stack(init_thread_union)					//在汇编阶段设置到sp寄存器中
+	.active_mm	= &init_mm
+
+======================================================
+
+
+
+enum cpuhp_state {
+	CPUHP_INVALID = -1,
+	CPUHP_OFFLINE = 0,								//核bringup之前是处于这个状态
+	CPUHP_CREATE_THREADS,
+	CPUHP_PERF_PREPARE,
+	CPUHP_PERF_X86_PREPARE,
+	CPUHP_PERF_X86_AMD_UNCORE_PREP,
+	CPUHP_PERF_POWER,
+	CPUHP_PERF_SUPERH,
+	CPUHP_X86_HPET_DEAD,
+	CPUHP_X86_APB_DEAD,
+	CPUHP_X86_MCE_DEAD,
+	CPUHP_VIRT_NET_DEAD,
+	CPUHP_SLUB_DEAD,
+	CPUHP_MM_WRITEBACK_DEAD,
+	CPUHP_MM_VMSTAT_DEAD,
+	CPUHP_SOFTIRQ_DEAD,
+	CPUHP_NET_MVNETA_DEAD,
+	CPUHP_CPUIDLE_DEAD,
+	CPUHP_ARM64_FPSIMD_DEAD,
+	CPUHP_ARM_OMAP_WAKE_DEAD,
+	CPUHP_IRQ_POLL_DEAD,
+	CPUHP_BLOCK_SOFTIRQ_DEAD,
+	CPUHP_ACPI_CPUDRV_DEAD,
+	CPUHP_S390_PFAULT_DEAD,
+	CPUHP_BLK_MQ_DEAD,
+	CPUHP_FS_BUFF_DEAD,
+	CPUHP_PRINTK_DEAD,
+	CPUHP_MM_MEMCQ_DEAD,
+	CPUHP_PERCPU_CNT_DEAD,
+	CPUHP_RADIX_DEAD,
+	CPUHP_PAGE_ALLOC_DEAD,
+	CPUHP_NET_DEV_DEAD,
+	CPUHP_PCI_XGENE_DEAD,
+	CPUHP_IOMMU_INTEL_DEAD,
+	CPUHP_LUSTRE_CFS_DEAD,
+	CPUHP_AP_ARM_CACHE_B15_RAC_DEAD,
+	CPUHP_WORKQUEUE_PREP,
+	CPUHP_POWER_NUMA_PREPARE,
+	CPUHP_HRTIMERS_PREPARE,
+	CPUHP_PROFILE_PREPARE,
+	CPUHP_X2APIC_PREPARE,
+	CPUHP_SMPCFD_PREPARE,
+	CPUHP_RELAY_PREPARE,
+	CPUHP_SLAB_PREPARE,
+	CPUHP_MD_RAID5_PREPARE,
+	CPUHP_RCUTREE_PREP,
+	CPUHP_CPUIDLE_COUPLED_PREPARE,
+	CPUHP_POWERPC_PMAC_PREPARE,
+	CPUHP_POWERPC_MMU_CTX_PREPARE,
+	CPUHP_XEN_PREPARE,
+	CPUHP_XEN_EVTCHN_PREPARE,
+	CPUHP_ARM_SHMOBILE_SCU_PREPARE,
+	CPUHP_SH_SH3X_PREPARE,
+	CPUHP_NET_FLOW_PREPARE,
+	CPUHP_TOPOLOGY_PREPARE,
+	CPUHP_NET_IUCV_PREPARE,
+	CPUHP_ARM_BL_PREPARE,
+	CPUHP_TRACE_RB_PREPARE,
+	CPUHP_MM_ZS_PREPARE,
+	CPUHP_MM_ZSWP_MEM_PREPARE,
+	CPUHP_MM_ZSWP_POOL_PREPARE,
+	CPUHP_KVM_PPC_BOOK3S_PREPARE,
+	CPUHP_ZCOMP_PREPARE,
+	CPUHP_TIMERS_PREPARE,
+	CPUHP_MIPS_SOC_PREPARE,
+	CPUHP_BP_PREPARE_DYN,
+	CPUHP_BP_PREPARE_DYN_END		= CPUHP_BP_PREPARE_DYN + 20,
+	CPUHP_BRINGUP_CPU,												// 85 核点亮后处于这个状态，第一阶段在这结束：CPUHP_CREATE_THREADS到CPUHP_BRINGUP_CPU
+	CPUHP_AP_IDLE_DEAD,												//第二阶段从这里开始，核正常工作, notify_cpu_starting()函数从 CPUHP_AP_IDLE_DEAD 开始往下到 CPUHP_ONLINE
+	CPUHP_AP_OFFLINE,
+	CPUHP_AP_SCHED_STARTING,
+	CPUHP_AP_RCUTREE_DYING,
+	CPUHP_AP_IRQ_GIC_STARTING,										//该核点亮后初始化gic相关配置时
+	CPUHP_AP_IRQ_HIP04_STARTING,
+	CPUHP_AP_IRQ_ARMADA_XP_STARTING,
+	CPUHP_AP_IRQ_BCM2836_STARTING,
+	CPUHP_AP_IRQ_MIPS_GIC_STARTING,
+	CPUHP_AP_ARM_MVEBU_COHERENCY,
+	CPUHP_AP_MICROCODE_LOADER,
+	CPUHP_AP_PERF_X86_AMD_UNCORE_STARTING,
+	CPUHP_AP_PERF_X86_STARTING,
+	CPUHP_AP_PERF_X86_AMD_IBS_STARTING,
+	CPUHP_AP_PERF_X86_CQM_STARTING,
+	CPUHP_AP_PERF_X86_CSTATE_STARTING,
+	CPUHP_AP_PERF_XTENSA_STARTING,
+	CPUHP_AP_MIPS_OP_LOONGSON3_STARTING,
+	CPUHP_AP_ARM_SDEI_STARTING,
+	CPUHP_AP_ARM_VFP_STARTING,
+	CPUHP_AP_ARM64_DEBUG_MONITORS_STARTING,
+	CPUHP_AP_PERF_ARM_HW_BREAKPOINT_STARTING,
+	CPUHP_AP_PERF_ARM_ACPI_STARTING,
+	CPUHP_AP_PERF_ARM_STARTING,
+	CPUHP_AP_ARM_L2X0_STARTING,
+	CPUHP_AP_ARM_ARCH_TIMER_STARTING,								//普通精度timer相关初始化
+	CPUHP_AP_ARM_GLOBAL_TIMER_STARTING,
+	CPUHP_AP_JCORE_TIMER_STARTING,
+	CPUHP_AP_EXYNOS4_MCT_TIMER_STARTING,
+	CPUHP_AP_ARM_TWD_STARTING,
+	CPUHP_AP_QCOM_TIMER_STARTING,
+	CPUHP_AP_TEGRA_TIMER_STARTING,
+	CPUHP_AP_ARMADA_TIMER_STARTING,
+	CPUHP_AP_MARCO_TIMER_STARTING,
+	CPUHP_AP_MIPS_GIC_TIMER_STARTING,
+	CPUHP_AP_ARC_TIMER_STARTING,
+	CPUHP_AP_RISCV_TIMER_STARTING,
+	CPUHP_AP_CSKY_TIMER_STARTING,
+	CPUHP_AP_KVM_STARTING,
+	CPUHP_AP_KVM_ARM_VGIC_INIT_STARTING,
+	CPUHP_AP_KVM_ARM_VGIC_STARTING,
+	CPUHP_AP_KVM_ARM_TIMER_STARTING,
+	/* Must be the last timer callback */
+	CPUHP_AP_DUMMY_TIMER_STARTING,
+	CPUHP_AP_ARM_XEN_STARTING,
+	CPUHP_AP_ARM_CORESIGHT_STARTING,
+	CPUHP_AP_ARM64_ISNDEP_STARTING,
+	CPUHP_AP_SMPCFD_DYING,
+	CPUHP_AP_X86_TBOOT_DYING,
+	CPUHP_AP_ARM_CACHE_B15_RAC_DYING,
+	CPUHP_AP_ONLINE,
+	CPUHP_TEARDOWN_CPU,
+	CPUHP_AP_ONLINE_IDLE,											//第三阶段，热拔插线程中处理，从 CPUHP_AP_ONLINE_IDLE 到 CPUHP_ONLINE
+	CPUHP_AP_SMPBOOT_THREADS,
+	CPUHP_AP_X86_VDSO_VMA_ONLINE,
+	CPUHP_AP_IRQ_AFFINITY_ONLINE,
+	CPUHP_AP_ARM_MVEBU_SYNC_CLOCKS,
+	CPUHP_AP_X86_INTEL_EPB_ONLINE,
+	CPUHP_AP_PERF_ONLINE,
+	CPUHP_AP_PERF_X86_ONLINE,
+	CPUHP_AP_PERF_X86_UNCORE_ONLINE,
+	CPUHP_AP_PERF_X86_AMD_UNCORE_ONLINE,
+	CPUHP_AP_PERF_X86_AMD_POWER_ONLINE,
+	CPUHP_AP_PERF_X86_RAPL_ONLINE,
+	CPUHP_AP_PERF_X86_CQM_ONLINE,
+	CPUHP_AP_PERF_X86_CSTATE_ONLINE,
+	CPUHP_AP_PERF_S390_CF_ONLINE,
+	CPUHP_AP_PERF_S390_SF_ONLINE,
+	CPUHP_AP_PERF_ARM_CCI_ONLINE,
+	CPUHP_AP_PERF_ARM_CCN_ONLINE,
+	CPUHP_AP_PERF_ARM_HISI_DDRC_ONLINE,
+	CPUHP_AP_PERF_ARM_HISI_HHA_ONLINE,
+	CPUHP_AP_PERF_ARM_HISI_L3_ONLINE,
+	CPUHP_AP_PERF_ARM_L2X0_ONLINE,
+	CPUHP_AP_PERF_ARM_QCOM_L2_ONLINE,
+	CPUHP_AP_PERF_ARM_QCOM_L3_ONLINE,
+	CPUHP_AP_PERF_ARM_APM_XGENE_ONLINE,
+	CPUHP_AP_PERF_ARM_CAVIUM_TX2_UNCORE_ONLINE,
+	CPUHP_AP_PERF_POWERPC_NEST_IMC_ONLINE,
+	CPUHP_AP_PERF_POWERPC_CORE_IMC_ONLINE,
+	CPUHP_AP_PERF_POWERPC_THREAD_IMC_ONLINE,
+	CPUHP_AP_PERF_POWERPC_TRACE_IMC_ONLINE,
+	CPUHP_AP_WATCHDOG_ONLINE,
+	CPUHP_AP_WORKQUEUE_ONLINE,
+	CPUHP_AP_RCUTREE_ONLINE,
+	CPUHP_AP_ONLINE_DYN,
+	CPUHP_AP_ONLINE_DYN_END		= CPUHP_AP_ONLINE_DYN + 30,
+	CPUHP_AP_X86_HPET_ONLINE,
+	CPUHP_AP_X86_KVM_CLK_ONLINE,
+	CPUHP_AP_ACTIVE,
+	CPUHP_ONLINE,													
+};
+
+/* Boot processor state steps */
+static struct cpuhp_step cpuhp_hp_states[] = {
+	[CPUHP_OFFLINE] = {
+		.name			= "offline",
+		.startup.single		= NULL,
+		.teardown.single	= NULL,
+	},
+#ifdef CONFIG_SMP
+	[CPUHP_CREATE_THREADS]= {										//smpboot_register_percpu_thread()里面还没online的cpu的内核线程的创建，延迟到cpu up时在这里处理
+		.name			= "threads:prepare",
+		.startup.single		= smpboot_create_threads,
+		.teardown.single	= NULL,
+		.cant_stop		= true,
+	},
+	[CPUHP_PERF_PREPARE] = {
+		.name			= "perf:prepare",
+		.startup.single		= perf_event_init_cpu,
+		.teardown.single	= perf_event_exit_cpu,
+	},
+	[CPUHP_WORKQUEUE_PREP] = {
+		.name			= "workqueue:prepare",
+		.startup.single		= workqueue_prepare_cpu,
+		.teardown.single	= NULL,
+	},
+	[CPUHP_HRTIMERS_PREPARE] = {
+		.name			= "hrtimers:prepare",
+		.startup.single		= hrtimers_prepare_cpu,
+		.teardown.single	= hrtimers_dead_cpu,
+	},
+	[CPUHP_SMPCFD_PREPARE] = {
+		.name			= "smpcfd:prepare",
+		.startup.single		= smpcfd_prepare_cpu,
+		.teardown.single	= smpcfd_dead_cpu,
+	},
+	[CPUHP_RELAY_PREPARE] = {
+		.name			= "relay:prepare",
+		.startup.single		= relay_prepare_cpu,
+		.teardown.single	= NULL,
+	},
+	[CPUHP_SLAB_PREPARE] = {
+		.name			= "slab:prepare",
+		.startup.single		= slab_prepare_cpu,
+		.teardown.single	= slab_dead_cpu,
+	},
+	[CPUHP_RCUTREE_PREP] = {
+		.name			= "RCU/tree:prepare",
+		.startup.single		= rcutree_prepare_cpu,
+		.teardown.single	= rcutree_dead_cpu,
+	},
+	/*
+	 * On the tear-down path, timers_dead_cpu() must be invoked
+	 * before blk_mq_queue_reinit_notify() from notify_dead(),
+	 * otherwise a RCU stall occurs.
+	 */
+	[CPUHP_TIMERS_PREPARE] = {
+		.name			= "timers:prepare",
+		.startup.single		= timers_prepare_cpu,
+		.teardown.single	= timers_dead_cpu,
+	},
+	/* Kicks the plugged cpu into life */
+	[CPUHP_BRINGUP_CPU] = {
+		.name			= "cpu:bringup",
+		.startup.single		= bringup_cpu,
+		.teardown.single	= NULL,
+		.cant_stop		= true,
+	},
+	/* Final state before CPU kills itself */
+	[CPUHP_AP_IDLE_DEAD] = {
+		.name			= "idle:dead",
+	},
+	/*
+	 * Last state before CPU enters the idle loop to die. Transient state
+	 * for synchronization.
+	 */
+	[CPUHP_AP_OFFLINE] = {
+		.name			= "ap:offline",
+		.cant_stop		= true,
+	},
+	/* First state is scheduler control. Interrupts are disabled */
+	[CPUHP_AP_SCHED_STARTING] = {
+		.name			= "sched:starting",
+		.startup.single		= sched_cpu_starting,
+		.teardown.single	= sched_cpu_dying,
+	},
+	[CPUHP_AP_RCUTREE_DYING] = {
+		.name			= "RCU/tree:dying",
+		.startup.single		= NULL,
+		.teardown.single	= rcutree_dying_cpu,
+	},
+	[CPUHP_AP_SMPCFD_DYING] = {
+		.name			= "smpcfd:dying",
+		.startup.single		= NULL,
+		.teardown.single	= smpcfd_dying_cpu,
+	},
+	/* Entry state on starting. Interrupts enabled from here on. Transient
+	 * state for synchronsization */
+	[CPUHP_AP_ONLINE] = {
+		.name			= "ap:online",
+	},
+	/*
+	 * Handled on controll processor until the plugged processor manages
+	 * this itself.
+	 */
+	[CPUHP_TEARDOWN_CPU] = {
+		.name			= "cpu:teardown",
+		.startup.single		= NULL,
+		.teardown.single	= takedown_cpu,
+		.cant_stop		= true,
+	},
+	/* Handle smpboot threads park/unpark */
+	[CPUHP_AP_SMPBOOT_THREADS] = {
+		.name			= "smpboot/threads:online",
+		.startup.single		= smpboot_unpark_threads,					//唤醒cpu
+		.teardown.single	= smpboot_park_threads,						//暂停cpu
+	},
+	[CPUHP_AP_IRQ_AFFINITY_ONLINE] = {
+		.name			= "irq/affinity:online",
+		.startup.single		= irq_affinity_online_cpu,
+		.teardown.single	= NULL,
+	},
+	[CPUHP_AP_PERF_ONLINE] = {
+		.name			= "perf:online",
+		.startup.single		= perf_event_init_cpu,
+		.teardown.single	= perf_event_exit_cpu,
+	},
+	[CPUHP_AP_WATCHDOG_ONLINE] = {
+		.name			= "lockup_detector:online",
+		.startup.single		= lockup_detector_online_cpu,
+		.teardown.single	= lockup_detector_offline_cpu,
+	},
+	[CPUHP_AP_WORKQUEUE_ONLINE] = {
+		.name			= "workqueue:online",
+		.startup.single		= workqueue_online_cpu,
+		.teardown.single	= workqueue_offline_cpu,
+	},
+	[CPUHP_AP_RCUTREE_ONLINE] = {
+		.name			= "RCU/tree:online",
+		.startup.single		= rcutree_online_cpu,
+		.teardown.single	= rcutree_offline_cpu,
+	},
+#endif
+	/*
+	 * The dynamically registered state space is here
+	 */
+
+#ifdef CONFIG_SMP
+	/* Last state is scheduler control setting the cpu active */
+	[CPUHP_AP_ACTIVE] = {
+		.name			= "sched:active",
+		.startup.single		= sched_cpu_activate,
+		.teardown.single	= sched_cpu_deactivate,
+	},
+#endif
+
+	/* CPU is fully up and running. */
+	[CPUHP_ONLINE] = {
+		.name			= "online",
+		.startup.single		= NULL,
+		.teardown.single	= NULL,
+	},
+};

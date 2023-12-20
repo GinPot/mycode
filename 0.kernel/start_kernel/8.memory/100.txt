@@ -1,0 +1,154 @@
+
+Migrate类型： buddy的空闲类表中每个2^n链表中都又分为下面6种链表，表明页面的移动属性，将属性相同的页面分再一组来抑制内存碎片；
+	MIGRATE_UNMOVABLE：	无法移动和检索的类型，用于内核分配的页面，I/O缓冲区，内核堆栈等；
+	MIGRATE_MOVABLE：	当需要大的连续内存时，通过移动当前使用的页面来尽可能防止碎片，用于分配用户内存；
+	MIGRATE_RECLAIMABLE：当没有可用内存时使用此类型；
+	MIGRATE_HIGHATOMIC：	减少原子分配请求无法进行高阶页面分配的可能，内核会提前准备一个页面块；
+	MIGRATE_CMA：		页面类型由CMA内存分配器单独管理；
+	MIGRATE_ISOLATE：	内核会暂时更改为这种类型，以迁移使用中的系列活动页面；
+
+
+enum migratetype {
+	MIGRATE_UNMOVABLE,												// 无法移动和检索的类型，用于内核分配的页面，I/O缓冲区，内核堆栈等；
+	MIGRATE_MOVABLE,												// 当需要大的连续内存时，通过移动当前使用的页面来尽可能防止碎片，用于分配用户内存；
+	MIGRATE_RECLAIMABLE,											// 这类页面不能直接移动，可直接回收； 如在内存不足时，可以回收文件系统的缓存来释放内存；
+	MIGRATE_PCPTYPES,	/* the number of types on the pcp lists */	//per_cpu,per_cpu_pageset? 用来表示per-cpu页框高速缓存的数据结构中链表迁移类型数目
+	MIGRATE_HIGHATOMIC = MIGRATE_PCPTYPES,
+
+	MIGRATE_CMA,													//页面由CMA内存分配器单独管理
+	MIGRATE_ISOLATE,	/* can't allocate from here */				//不能从该链表分配页面；该链表用于跨NUMA节点进行页面移动；
+
+	MIGRATE_TYPES													//迁移类型的数目
+};
+
+
+
+
+
+
+
+================================================================================================
+enum zone_type {
+	ZONE_DMA32,				内存在0x00000000~0xFFFFFFFF范围内的都属于这个zone;
+	ZONE_NORMAL,			内存大于0xFFFFFFFF的属于这个zone
+	ZONE_MOVABLE,			用于优化内存迁移场景，该zone内存都一定可以迁移(优化了普通zone中存在不可迁移的内存，这增加了迁移的难度，也加剧了内存碎片化)； 优化内存热拔插，
+	__MAX_NR_ZONES
+};
+
+
+
+预留内存： 每个zone都会为操作系统预留一部分内存用于高优先的内存请求
+
+struct zone {
+	...
+	unsigned long nr_reserved_highatomic;	//表示该zone预留内存大小，单位kb；
+	long lowmem_reserve[MAX_NR_ZONES];		//该zone对于其他zone需要预留的内存，如相对ZONE_DMA32需要预留多少，相对ZONE_NORMAL需要预留多少，相对ZONE_MOVABLE需要预留多少
+	...
+}
+
+================================================================================================
+
+
+
+enum zone_watermarks {
+	WMARK_MIN,			低于改线，内核直接进行内存回收
+	WMARK_LOW,			内存警戒线，低于改线，内核唤醒kswapd进程异步回收(转存到磁盘中)内存直到水位线高于WMARK_HIGH，
+	WMARK_HIGH,			内存安全线
+	NR_WMARK
+};
+
+struct zone {
+    // 物理内存区域中的水位线
+    unsigned long _watermark[NR_WMARK];
+}
+
+
+ALLOC_xxxx分配标志： 在页面的分配函数中与gfp_mask分开使用，这些标志时用于内部函数的分配; mm/internal.h
+
+#define ALLOC_WMARK_MIN		WMARK_MIN									//内存分配时剩余内存数量至少要达到WMARK_MIN，才能进行内存分配
+#define ALLOC_WMARK_LOW		WMARK_LOW									//同上
+#define ALLOC_WMARK_HIGH	WMARK_HIGH									//同上
+#define ALLOC_NO_WATERMARKS	0x04										//不考虑水位线，都会进行内存分配
+
+#define ALLOC_HARDER		0x10 /* try to alloc harder */				//内存分配时会放宽内存分配规则限制，如降低WMARK_MIN水位线，努力是内存分配最大可能成功
+#define ALLOC_HIGH		 	0x20 /* __GFP_HIGH set */					//在设置了___GFP_HIGH，该标志才起作用，表示当前内存分配请求是最高优先级，分配失败会给系统带来严重后果，不允许分配失败，内存不足时蛔虫紧急预留内存中分配
+#define ALLOC_CPUSET		0x40 /* check for correct cpuset */			//只能在当前进程允许的cpu所关联的NUMA节点中进行分配； 如用cgroup限制进程在某些特定的cpu允许，进程在申请内存时只能在特定cpu所在的NUMA节点中进行
+#define ALLOC_CMA		 	0x80 /* allow allocations from CMA areas */	//允许从CMA区域进行分配；
+#define ALLOC_NOFRAGMENT	0x0
+#define ALLOC_KSWAPD		0x200 /* allow waking of kswapd */			//允许唤醒NUMA节点中的Kswapd进程，进行异步内存回收
+
+内核会为每个NUMA节点分配一个kswapd进程用于回收不经常使用的页面
+
+
+================================================================================================
+
+复合页(Compound Page)：
+	将物理上连续的两个或多个页看成一个独立的大页，大小一般是2^order*PAGE_SIZE大小；
+	复合页主要用在HugeTLB相关代码，也可以用来创建hugetlbfs中使用的大页(hugepage),或创建透明大页(transparent huge page)子系统
+
+================================================================================================
+_GFP_xxx请求标志： buddy算法内部使用，申请内存的api不适用，GFP表示get free page; include/linux/gfp.h
+
+
+#define __GFP_DMA				0x01u				//gfp_mask中的低4位用来表示从哪个zone中申请内存，没有___GFP_NORMAL是因为在不指定的情况下就是从normal中分配内存(vmalloc()函数就不带gfp_mask参数)，normal申请不到，则按照ZONE_NORMAL > ZONE_DMA32顺序依次降级
+#define __GFP_HIGHMEM			0x02u
+#define __GFP_DMA32				0x04u
+#define __GFP_MOVABLE			0x08u				//似乎不是指从ZONE_MOVABLE中申请内存，而是指定分配的内存是可移动的
+	
+#define __GFP_RECLAIMABLE		0x10u				//指定分配的页面是可回收的 ？ 根据进程评分直接杀死进程释放内存？
+#define __GFP_HIGH				0x20u				//表示内存分配请求是高优先级的，内存急需要的内存，分配失败会给系统带来严重的后果，，改标志通常表示内存分配不允许失败，在空闲内存不足时会从紧急预留内存中分配
+#define __GFP_IO				0x40u				//表示内存在分配是可以发起磁盘IO操作；设置了该标志则在内存分配时，若发现内存不足，可以将不经常使用的内存也置换到swap分区或文件中； 但对于块设备相关代码不能设置这个标志位，防止申请不到内存有触发磁盘IO递归操作
+#define __GFP_FS				0x80u				//允许内核执行底层文件系统操作，在设置GFP_FS时若内存不足会将不经常使用的内存置换到文件系统缓存中，如缓存关联了磁盘最终将会存到磁盘中，若没有关联则存在某块内存中；也需要避免块设备或者虚拟文件系统相关代码设置这个标志位
+	
+#define __GFP_ZERO				0x100u				//在内核分配内存成功后，将内存也初始化填充0
+#define __GFP_ATOMIC			0x200u				//表示内存在分配时不允许睡眠，必须是原子行进行内存分配；如在中断处理程序中，自旋锁上下文中申请内存必须加上这个标志
+#define __GFP_DIRECT_RECLAIM	0x400u				//表示内存分配时剩余内存容量低于水位线_watermark[WMARK_MIN]则可以直接进行内存回收
+#define __GFP_KSWAPD_RECLAIM	0x800u				//表示内存分配时剩余内存容量再WMARK_LOW和WMARK_MIN之间，内核唤醒kswapd进程异步回收内存直到水位线高于WMARK_HIGH
+
+#define __GFP_WRITE				0x1000u				// 申请内存时设置该标志位表示文件系统申请分配一个页缓存页用于写文件？或是说明此次申请的物理页将会生成脏页
+#define __GFP_NOWARN			0x2000u				// 内核分配失败是，一直内核的分配失败错误打印
+#define __GFP_RETRY_MAYFAIL		0x4000u				//内存分配失败时运行重试，但重试仍可能失败，重试若干次后停止
+#define __GFP_NOFAIL			0x8000u				//内存分配失败时一直重试直到成功为止
+
+#define __GFP_NORETRY			0x10000u			//内存分配失败时不允许重试
+#define __GFP_MEMALLOC			0x20000u			//运行分配内存时可以从所有内存区域中获取内存，也包括从紧急预留内存中获取； 但要注意设置改标志时在获取内存后尽快的释放内存，不能过程时间占用；
+#define __GFP_COMP				0x40000u			//设置该标志表示内核会将申请的这些内存组合成复合页
+#define __GFP_NOMEMALLOC		0x80000u			//明确禁止内核从紧急预留内存中获取内存，优先级高于___GFP_MEMALLOC
+	
+#define __GFP_HARDWALL			0x100000u			//该标记表示只能在当前进程分配所能运行的cpu所关联的NUMA节点上进行分配；当进程只能运行在某些cpu上改标志才有意义，若进程允许运行在所有cpu上则标志没有意义
+#define __GFP_THISNODE			0x200000u			//只从当前NUMA节点中，按照zone的优先级申请内存，不会从其他NUMA节点中申请
+#define __GFP_ACCOUNT			0x400000u			//该标记在分配的过程会被kmemcg(内存控制)记录；从用户控件触发的不可信任的分配应该是kmem核算的对象，必先要设置这个标志位
+#define __GFP_NOLOCKDEP			0						//禁用lockdep这个locking检查工具对内存分配上下文的检查，这个标志只在内存管理子系统和XFS文件系统中使用
+
+
+
+#define __GFP_RECLAIM ((__force gfp_t)(__GFP_DIRECT_RECLAIM|__GFP_KSWAPD_RECLAIM))
+
+
+#define GFP_ATOMIC				(__GFP_HIGH|__GFP_ATOMIC|__GFP_KSWAPD_RECLAIM)				//表示内存分配行为必须是原子的，高优先级的，不允许睡眠，空闲内存不足时会从紧急预留内存中分配；适用于中断，自旋锁上下文中使用；
+#define GFP_KERNEL				(__GFP_RECLAIM | __GFP_IO | __GFP_FS)						//分配过程中可能会阻塞睡眠(在内存低于WMARK_MIN，直接进行内存回收时将阻塞)；内存在WMARK_MIN到WMARK_LOW之间时内核kswapd进程异步置换出一些不活跃的内存页到磁盘中，适用于普通安全调度进程的上下文中
+#define GFP_KERNEL_ACCOUNT 		(GFP_KERNEL | __GFP_ACCOUNT)								//分配的过程会被kmemcg(内存控制)记录 + GFP_KERNEL
+#define GFP_NOWAIT				(__GFP_KSWAPD_RECLAIM)										//内存容量再WMARK_LOW和WMARK_MIN之间申请内存时不会阻塞等待
+#define GFP_NOIO				(__GFP_RECLAIM)												//内存不足是可以内存直接回收，或kswapd进程回收，但kswapd回收似乎没有用？主要用在块设备或文件系统代码中，防止递归
+#define GFP_NOFS				(__GFP_RECLAIM | __GFP_IO)									//内存不足是可以内存直接回收，或kswapd进程回收，kswapd回收时不经过文件系统直接磁盘操作？主要用在文件系统代码中，防止递归
+#define GFP_USER				(__GFP_RECLAIM | __GFP_IO | __GFP_FS | __GFP_HARDWALL)		//用于映射用户空间的内存分配，
+#define GFP_DMA					__GFP_DMA
+#define GFP_DMA32				__GFP_DMA32
+#define GFP_HIGHUSER			(GFP_USER | __GFP_HIGHMEM)
+#define GFP_HIGHUSER_MOVABLE	(GFP_HIGHUSER | __GFP_MOVABLE)
+#define GFP_TRANSHUGE_LIGHT		((GFP_HIGHUSER_MOVABLE | __GFP_COMP | __GFP_NOMEMALLOC | __GFP_NOWARN) & ~__GFP_RECLAIM)
+#define GFP_TRANSHUGE			(GFP_TRANSHUGE_LIGHT | __GFP_DIRECT_RECLAIM)
+
+
+
+
+
+
+
+
+
+
+
+
+
+

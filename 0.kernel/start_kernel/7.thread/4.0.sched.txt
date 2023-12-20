@@ -1,0 +1,581 @@
+1、调度/抢占的场景
+	1.1、调度： 因等待资源主动挂起；
+		msleep					==>		schedule()/wake_up_process()				//定时器唤醒,区别usleep_range()高精度定时器来唤醒
+		信号量： up_down			==>		schedule()/wake_up_process()	
+		互斥锁					==>		schedule()/wake_up_process()				//依赖等待队列
+		poll:					==>		poll_wait()/wake_up_interruptible()			//依赖schedule()/wake_up_process(), poll_wait只是加入等待队列中,后面在do_select()中用高精度定时器睡眠唤醒
+		rcu->synchronize_rcu()	==>		wait_for_completion()/complete()			//依赖schedule()/wake_up_process(), 完成量,依赖等待队列,rcu的阻塞等待
+		等待队列					==>		wait_evnet()/wake_up()						//依赖schedule()/wake_up_process(), 等待队列
+		
+		任务主动退出				==>		kernel/exit.c	do_exit > do_task_dead > __schedule(false)
+
+	2.1、抢占：					主要就是调用 resched_curr()函数设置 TIF_NEED_RESCHED 标志位
+		1、时间片用完；
+		2、中断或进程唤醒其他优先级更高的进程；
+		3、创建新进程高于当前运行的线程
+		4、修改进程优先级高于当前运行的线程；
+		注1： 都是先设置 task_struct->thread_info->flags=TIF_NEED_RESCHED,然后等待调度点来临；
+
+	2.2、能否抢占： task_struct->thread_info->preempt_count=0时才允许抢占；
+
+	2.3、调度点(抢占时机)：		直接调用_schedule的地方
+		1、禁止线程抢占后在使能时刻会_schedule(true)来检测是否有调度的需求(preempt_disable()/preempt_enable(), spin_lock);
+		2、1.1中的主动睡眠调度的情况；
+		3、中断退出返回内核/用户空间之前；
+		4、系统调用返回用户空间时；
+
+
+2、线程切换过程；					OK
+3、调度器选择合适线程过程；			OK(什么时候更新的红黑树？)
+	3.1、schedule()/wake_up_process()会更新红黑树；
+	3.2、挑选下个合适的线程时会更新红黑树：
+		3.2.1、即将调度出去的线程会加入到红黑树；
+		3.2.2、即将运行的线程会从红黑树中移除
+
+smp状态补全											OK, 见1.smp.txt
+4、线程/调度初始化流程									OK, 见4.1.sched_init.txt
+	4.1、线程初始化流程；
+		4.1.1、内核线程创建都是在kthreadd线程创建之后来做的：kernel_init_freeable()的第一条wait_for_completion(&kthreadd_done)
+		4.1.2、调度相关初始化sched_init(),sched_init_smp()
+5、cpu负载统计(参考3.0.arch-timer(tick).txt)			OK
+
+
+
+
+8、线程statu迁移含义，如：
+	TASK_RUNNING(正在运行中或处于rq队列中等待被调度)
+	TASK_INTERRUPTIBLE(可以被signal打断)
+
+
+
+
+
+
+
+
+
+
+进程切换：
+	1、地址空间寄存器(ttbr0_el1,ttbr1_el1)，页表切换，isb;
+	2、通用寄存器；
+	3、浮点寄存器；
+	4、其他寄存器(ASID、thread process ID register等);
+
+ARM64标准过程调用文档：
+	x19～x28是属于callee-saved registers：被调用的函数需要保证该函数被调用前后这几寄存器值一样，同样需要一样的还有pc、sp、fp
+
+===========================================================================================================
+
+preempt_enable()											/include/linux/preempt.h, 使能过程中发现preempt_count为0就抢占调度
+	if (unlikely(preempt_count_dec_and_test()))
+		__preempt_schedule() ==> preempt_schedule()
+			if (likely(!preemptible()))						// 888 如果preempt_count非0,则直接返回，可以嵌套，所以可能仍不能抢占
+				return;
+			preempt_schedule_common()
+				do {
+					preempt_disable_notrace()				//禁止抢占
+					preempt_latency_start(1);				//没有什么操作
+					__schedule(true);						// 888 ,传参true表示此次是抢占调度，false表示非抢占调度(主动调度)
+					preempt_latency_stop(1);
+					preempt_enable_no_resched_notrace()		//使能抢占，但不会重新调度，值得注意的是切换后的进程在上一次__schedule(true)之前禁止抢占了，所以这次切换回来仍是直接抢占的，需要使能
+				} while (need_resched());					//如果切换后的进程仍需要调度就继续
+				
+===========================================================
+__schedule()
+	1、调用该函数之前需要关闭抢占；关抢占之前需要确定preempt_count为0，非0可能是：显示禁止抢占、在中断上下文、spinlock上下文等，不能调度
+
+schedule()
+	sched_submit_work(tsk);									//完成当前任务的收尾工作，以避免出现如死锁或者IO中断等情况(把plugged io处理掉放置死锁)
+	do {
+		preempt_disable();									//禁止抢占
+		__schedule(false);									//非抢占调度
+		sched_preempt_enable_no_resched();					//恢复抢占
+	} while (need_resched());								//如果切换后的进程仍需要调度就继续
+	sched_update_worker(tsk);
+
+===========================================================
+主动睡眠：主要是把task从运行队列rq中异常；
+唤醒主动睡眠的进程则是在rq上添加task
+
+__schedule(true)
+	cpu = smp_processor_id();
+	rq = cpu_rq(cpu);										//获取当前cpu的runqueue data structure
+	prev = rq->curr;										//确定当前运行的进程task_struct结构体
+	schedule_debug(prev)									//检测preempt_count是否为1，不是则强制设置为1，然后继续运行(防止不是正常的状态进入)
+	local_irq_disable();									//禁止本地中断
+	rcu_note_context_switch(preempt)						//在使用rcu时不允许阻塞、调度、idle等(静态状态)，若处于静态状态的话说明已经退出临界区，当发生进程切换时，表示已经退出临界区，通知RCU更新状态，
+	rq_lock(rq, &rf);										//runqueue上锁
+	...
+	if (!preempt && prev->state)							//若非抢占调度且state非running，则说明是主动睡眠
+		if (signal_pending_state(prev->state, prev))
+			prev->state = TASK_RUNNING						//如果state是TASK_INTERRUPTIBLE或SIGKILL，则恢复running状态再切换(若是TASK_INTERRUPTIBLE(可以通过signal打断睡眠)或SIGKILL说明线程可以快速退出睡眠，所以不用从rq队列上移除？)
+		deactivate_task(rq, prev, DEQUEUE_SLEEP | DEQUEUE_NOCLOCK);		// 888 将睡眠的task从运行队列rq上移除，并通过传入的flag表明这次deactive是由于sleep( 888 抢占的话因为还有运行能力，所以不用从rq上删除 ); 对于cfs调用的是dequeue_task_fair()
+			dequeue_task(rq, p, flags)
+				p->sched_class->dequeue_task(rq, p, flags)
+				dequeue_task_fair										//enqueue_task_fair的反向操作
+					for_each_sched_entity(se)
+						...
+						dequeue_entity(cfs_rq, se, flags)				
+							__dequeue_entity(cfs_rq, se)				//移除红黑树
+						...
+						cfs_rq->h_nr_running--
+					for_each_sched_entity(se)
+						cfs_rq->h_nr_running--
+						...
+						update_load_avg(cfs_rq, se, UPDATE_TG);
+						update_cfs_group(se);
+						
+		if (prev->in_iowait) {  							//若是schedule_io触发的睡眠
+            atomic_inc(&rq->nr_iowait); 					//增加rq上io睡眠进程的数量，原子操作是由于ttwu中可能并发减
+            delayacct_blkio_start(); 						//记录当前io开始的时间，ttwu会记录io结束的时间
+        }
+	...
+	next = pick_next_task(rq, prev, &rf)					//挑选合适的next进程来运行
+	clear_tsk_need_resched(prev);							//清除 TIF_NEED_RESCHED 标志位
+	clear_preempt_need_resched();
+	
+	if (likely(prev != next))								//线程和之前不同进行切换
+		rq->nr_switches++									//rq上统计切换计数+1
+		rq->curr = next;
+		...
+		rq = context_switch(rq, prev, next, &rf); 			//正式开始进程上下文切换，里面会释放rq的锁
+	else { 													//若prev和next相同则无需调度，收尾处理：包括释放锁和开中断
+		...
+	...
+
+
+===========================================================
+挑选合适进程
+
+1、根据调度器的优先级(deadline > RT > CFS > Idle)、依次调用调度器的pick_next_task实现找下个执行的线程
+2、rq中的线程都是CFS，则直接调用cfs的pick_next_task：
+	2.1、挑选cfs_rq上vruntimer最小的线程；
+	2.2、最终没有合适的线程，就挑选idle进程运行；
+
+
+pick_next_task(rq, prev, &rf)
+	if (likely((prev->sched_class == &idle_sched_class ||	//如果当前rq上的线程全是cfs的，
+		    prev->sched_class == &fair_sched_class) &&
+		   rq->nr_running == rq->cfs.h_nr_running))
+		p = fair_sched_class.pick_next_task(rq, prev, rf)	//则直接调用cfs的接口找下个调度的线程
+			pick_next_task_fair(rq, prev, rf)
+				put_prev_task(rq, prev)						//主要是处理prev进程的后事，当进程让出cpu时就会调用该函数
+				put_prev_task_fair()
+					for_each_sched_entity(se)
+						cfs_rq = cfs_rq_of(se)
+						put_prev_entity(cfs_rq, se)
+							update_curr(cfs_rq)				//更新将要调度出去的进程的虚拟时间
+							...
+							__enqueue_entity(cfs_rq, prev)	//将要调度出去的线程重新加入到红黑树中
+							...
+							cfs_rq->curr = NULL;
+				do																//从根cfs就绪队列开始遍历
+					se = pick_next_entity(cfs_rq, NULL)							//从就绪队列cfs_rq的红黑树中选择虚拟时间最小的se
+						...
+						__dequeue_entity(cfs_rq, se);							//在红黑树中删除将要运行的se
+						...
+						cfs_rq->curr = se
+						...
+					set_next_entity(cfs_rq, se)									//选择出来的调度实体se还需要继续加工一下才能投入运行
+					cfs_rq = group_cfs_rq(se)
+				} while (cfs_rq);												//如果是group se，我们需要从group cfs_rq上的红黑树选择下一个虚拟时间最小的se，以此循环直到最底层的task se
+			
+		if (unlikely(!p))
+			p = idle_sched_class.pick_next_task(rq, prev, rf);		//没有的话就调用idle
+
+	for_each_class(class) {
+		p = class->pick_next_task(rq, prev, rf);					//以上条件都不满足的话，按照调度类的优先级顺序运行
+
+===========================================================
+线程切换:
+	1、地址空间切换；
+	2、通用寄存器切换；
+
+struct task_struct {
+
+	struct mm_struct		*mm;							//改线程的地址空间描述符
+	struct mm_struct		*active_mm;						//改线程当前正在使用的地址空间描述符
+	
+	mm_context_t 			context:
+		atomic64_t  id										//ASID
+
+}
+1、对于正常的用户控件线程，其mm和active_mm是相同的
+2、内核线程mm是NULL(没有进程地址空间)，只是用active_mm表示该进程的地址空间
+
+
+
+context_switch(rq, prev, &rf)
+	...
+	mm = next->mm;
+	oldmm = prev->active_mm;
+	...
+	
+	if (!mm) {												//mm为空的话说明是个内核线程，所以只能设置oldmm
+		next->active_mm = oldmm;							//所有内核线程或者用户线程关于内核的地址空间都一样，所以可以直接借用被切出线程的地址空间
+		atomic_inc(&oldmm->mm_count);						// 888 由于被内核线程借用，所以引用计数+1，后续会保存在rq结构体中,；在内核线程被切除的时候借助rq结构体在finish_task_switch中计数-1
+		enter_lazy_tlb(oldmm, next)							//arm64为空函数；x86会使用：在其他核修改了页表需要同步其他核(ASID、一个进程里的多个线程在不同核上)，但改cpu将切到内核线程中不需要同步用户控件的tlb，所以lazy
+	} else
+		switch_mm_irqs_off(oldmm, mm, next)					//在这里完成普通用户线程的内存地址空间切换，因为切换是在内核中发生的，切换前后线程的内核的地址空间都一样(所有用户空间的内存地址空间都一样)
+			switch_mm(prev,next,tsk)						// 888 ./include/linux/mmu_context.h +14
+				__switch_mm(next)							//./arch/arm64/include/asm/mmu_context.h:230,所有应用线程、内核线程共享内核地址空间(ttbr1_el1)，所以地址空间的切换主要是切换ttbr0_el1
+					if (next == &init_mm) 					//对于swapper进程(即0号进程)的地址空间，其用户空间没有任何的mapping，而如果要切入的地址空间就是swapper进程的地址空间的时候，将（设定ttbr0_el1指向empty_zero_page）
+						cpu_set_reserved_ttbr0();
+					check_and_switch_context(next, cpu)		//arch\arm64\mm\context.c
+						asid = atomic64_read(&mm->context.id)	//获取需要切换进程的asid：其中低16 bit对应HW 的ASID（ARM64支持8bit或者16bit的ASI）。其余的bit都是软件扩展的，我们称之generation;HW asid溢出后，asid generation会累加
+						if (old_active_asid &&					//当要切入的mm的software asid仍然处于当前这一批次（generation）的ASID的时候，切换中不需要任何的TLB操作，可以直接调用cpu_switch_mm进行地址空间的切换
+							!((asid ^ atomic64_read(&asid_generation)) >> asid_bits) &&
+							atomic64_cmpxchg_relaxed(&per_cpu(active_asids, cpu),
+										 old_active_asid, asid))
+							goto switch_mm_fastpath;
+						asid = atomic64_read(&mm->context.id);
+						if ((asid ^ atomic64_read(&asid_generation)) >> asid_bits) {		//要切入的进程和当前的asid generation不一致，那么说明该地址空间需要一个新的software asid,调用new_context分配一个新的context ID
+							asid = new_context(mm);
+							atomic64_set(&mm->context.id, asid);
+						}
+						if (cpumask_test_and_clear_cpu(cpu, &tlb_flush_pending))			//各个cpu在切入新的asid空间的时候会调用local_flush_tlb_all将本地tlb flush掉
+							local_flush_tlb_all();
+
+						cpu_switch_mm(mm->pgd, mm)
+							cpu_do_switch_mm(virt_to_phys(pgd),mm)
+								phys_to_ttbr x3, x0
+								msr	ttbr0_el1, x3			//将mm->pgd物理地址写入ttbr0_el1
+								isb							//所有用户进程的内核空间页表都是一样的，所以这里切了页表并不影响运行； 系统寄存器的修改效果isb之后的指令都可以看到
+				
+
+	if (!prev->mm) {										//如果被切出去的线程是内核线程，
+		prev->active_mm = NULL;								//则该线程测试不再需要active_mm(已经挂起，不需要分地址空间了)
+		rq->prev_mm = oldmm;								//  888
+	}
+	...
+	switch_to(prev, next, prev)								//切换寄存器状态和堆栈，被切换的线程调用后就一去不会；要是被调用的线程从这返回，说明是再次被调度执行了
+		 __switch_to((prev), (next))						// ./include/asm-generic/switch_to.h，主要切换通用寄存器、浮点寄存器、地址空间寄存器(ttbr0_el1,ttbr1_el1),其他寄存器（ASID、thread process ID register等）
+			fpsimd_thread_switch(next)						//./arch/arm64/kernel/process.c,当前FPSIMD的状态保存到了内存中（task.thread.fpsimd_state），从要切入的next进程描述符中获取FPSIMD状态，并加载到CPU上
+			tls_thread_switch(next)							//概念同上，不过是处理tls（thread local storage）的切换。这里硬件寄存器涉及tpidr_el0和tpidrro_el0，涉及的内存是task.thread.tp_value。具体的应用场景是和线程库相关
+			hw_breakpoint_thread_switch(next);
+			contextidr_thread_switch(next);					//这两条和硬件跟踪相关
+			...
+			cpu_switch_to(prev, next)
+				mov	x10, #THREAD_CPU_CONTEXT
+				add	x8, x0, x10								//找到prev的task_struct->thread
+					mov	x9, sp
+					stp	x19, x20, [x8], #16					// store callee-saved registers,将x19～x28,pc、sp、fp等寄存器保存到prev的task_struct->thread->cpu_context中
+					stp	x21, x22, [x8], #16
+					stp	x23, x24, [x8], #16
+					stp	x25, x26, [x8], #16
+					stp	x27, x28, [x8], #16
+					stp	x29, x9, [x8], #16
+					str	lr, [x8]
+					
+					add	x8, x1, x10
+					ldp	x19, x20, [x8], #16					// restore callee-saved registers，将next的task_struct->thread->cpu_context回复到通用寄存器中
+					ldp	x21, x22, [x8], #16
+					ldp	x23, x24, [x8], #16
+					ldp	x25, x26, [x8], #16
+					ldp	x27, x28, [x8], #16
+					ldp	x29, x9, [x8], #16
+					ldr	lr, [x8]
+					mov	sp, x9								//恢复next的栈指针
+					ret										//x30（lr）寄存器的值加载到PC，至此现场完全恢复到调用cpu_switch_to那一点上
+	barrier()
+	finish_task_switch(prev)
+		struct mm_struct *mm = rq->prev_mm
+		...
+		
+		if (mm) {
+			...
+			mmdrop(mm);										//内核线程借用别人的地址空间计数-1
+
+
+
+
+TLB：
+	1、单核场景进程切换时地址空间操作优化；
+		1.1、地址空间切换前flush所有的TLB和cache，安全，性能不佳；
+		1.2、只flush用户空间地址，内核空间不变；
+		1.3、特殊情况下的考量：1、用户进程切到内核进程；2、一个进程中的两个线程切换；都不需要切换地址空间，也就不需要flush tlb；
+		1.4、引入ASID的支持，进程切换不再需要flush tbl，通过ASID保证了硬件可以区分A和B进程地址空间
+	2、多核场景进程切换时地址空间操作特点；
+		2.1、ASID的支持同样大大提升了性能；
+		2.2、由于不flash tlb，各个cpu上可能保留各种task的tlb entry；当一个task被销毁或修改了自己的页表，这是可能需要flash多个cpu的TLB entry(ARM64在指令集层面支持shareable domain中所有PEs上的TLB flush动作)(x86 IPI实现)带来了额外的开销
+
+=========================================================================================================
+1、调度类的优先级设置抢占标志位；
+2、cfs中虚拟时间大小(也类同优先级差异)设置抢占标志位
+3、将线程添加到红黑树中
+
+wake_up_process(waiter->task)
+	try_to_wake_up(p, TASK_NORMAL, 0)
+		raw_spin_lock_irqsave(&p->pi_lock, flags)								//上锁，禁止本地中断
+		cpu = task_cpu(p)														//获取最后执行进程的CPU
+		if (p->on_rq && ttwu_remote(p, wake_flags))								//检测改线程是不是已经在一些rq上了
+			goto stat
+		...
+		#ifdef CONFIG_SMP
+			...
+			select_task_rq(p, p->wake_cpu, SD_BALANCE_WAKE, wake_flags)			//多核中，根据均衡负载，检测是否需要迁移到其他CPU上运行
+		#endif
+		...
+		ttwu_queue(p, cpu, wake_flags)											// 888 
+			ttwu_do_activate(rq, p, wake_flags, &rf)
+				activate_task(rq, p, en_flags)
+					enqueue_task(rq, p, flags)
+						p->sched_class->enqueue_task(rq, p, flags)				// 888 主要是就把task放到cfs的rq队列中
+						enqueue_task_fair(rq, p, flags)
+							for_each_sched_entity(se)							//循环找到这个se，及se对应的parent加入到就绪队列rq中
+								if (se->on_rq)
+									break										//如果已经在rq队列中就直接break
+								enqueue_entity(cfs_rq, se, flags);				// 888
+									...
+									if (flags & ENQUEUE_WAKEUP)
+										place_entity(cfs_rq, se, 0)				//会对睡眠进程奖励 sysctl_sched_latency(一个调度延迟) 的时间，但是前提是这个进程的睡眠时间至少超过了这个时间
+									...
+									__enqueue_entity(cfs_rq, se)				//其添加到红黑树中
+								...
+								cfs_rq->h_nr_running++;							//走到这说明之前没有在rq中，所以需要把se对应的cfs_rq对应的nr++
+								...
+							for_each_sched_entity(se)
+								cfs_rq->h_nr_running++;							//走到这说函数进来se对应已经加入在rq的parent的se，对应cfs_rq的nr++
+								...
+								update_load_avg(cfs_rq, se, UPDATE_TG);			//同事更新parent的一些信息
+								update_cfs_group(se);
+						
+				twu_do_wakeup(rq, p, wake_flags, rf)							//确认是否需要设置抢占 TIF_NEED_RESCHED 标志位
+					check_preempt_curr(rq, p, wake_flags)
+						if (p->sched_class == rq->curr->sched_class)			//如果抢占进程与当前进程属于同一调度类，则调用调度类check_preempt_curr方法检查当前进程是否可以抢占
+							rq->curr->sched_class->check_preempt_curr(rq, p, flags)
+								check_preempt_wakeup 							//cfs调度类的进程调用check_preempt_wakeup 
+									if (unlikely(se == pse))					//如果是运行队列的当前调度实体和当前进程的调度实体相同，直接返回不进行抢占处理
+										return;
+									...
+									if (test_tsk_need_resched(curr))
+										return									//如果当前进程是可以被抢占的，则不用设置，直接返回就行了
+									if (unlikely(task_has_idle_policy(curr)) && likely(!task_has_idle_policy(p)))
+										goto preempt;							//如果当前进程的policy是SCHED_IDLE而p的policy不是SCHED_IDLE，很明显是可以抢占的
+									if (unlikely(p->policy != SCHED_NORMAL) || !sched_feat(WAKEUP_PREEMPTION))
+										return;									//如果p的policy不是NORMAL，同时也不是IDLE，那么一定是RT(没有打开唤醒抢占特性的情况)，则是不能抢占的
+									...
+									if (wakeup_preempt_entity(se, pse) == 1)	//当前进程的虚拟时间大于需要唤醒进程的虚拟时间，且其差值值大于需要唤醒进程在一个调度周期内需要运行的虚拟时间
+										goto preempt
+						else													//抢占进程与当前进程不是同一调度类，则按照调度类的优先级判别
+							for_each_class(class)								//按优先级从高到低遍历调度类 
+								if (class == rq->curr->sched_class)				//匹配到当前进程，则说明当前进程调度类优先级高于抢占进程，即不可抢占 
+									break;
+								if (class == p->sched_class)					//匹配到抢占进程，则说明抢占进程调度类优先级高于当前进程，即可抢占
+									resched_curr(rq);
+									break;
+	
+
+
+
+ENQUEUE_WAKEUP :	该进程是从睡眠状态下唤醒的，对应的 dequeue 标志为 DEQUEUE_SLEEP
+
+ENQUEUE_RESTORE:	该标志位表示恢复，通常应用在当用户设置进程的 nice 值或者对进程设置新的调度参数时，为了公平起见，调度器会先把进程 dequeue 然后再 enqueue，改变调度参数的同时应该重新参与调度.对应的 DEQUEUE 标志为 DEQUEUE_SAVE，DEQUEUE_MOVE
+ENQUEUE_MIGRATED:	多核架构中，进程迁移时会设置该标志位，表示当前进程是从其它的 rq 上移过来的，需要重新设置 vruntime.	
+	因为每个 cfs_rq 的 min_runtime 并不是同步的，同时 min_runtime 是每个 cfs_rq 的基准值，调度器会先将待迁移进程的 vruntime 减去 A->min_vruntime，
+	留下一个纯粹的属于该进程的 vruntime，然后迁移到 B 时，设置 vruntime 再加上 B->min_vruntime.
+
+=========================================================================================================
+2.1、抢占：
+	1、时间片用完；
+		1、运行时间大于本该运行的时间则置抢占标志
+		2、se虚拟时间比leftmost进程虚拟时间多ideal_runtime，也设置抢占标志
+
+		resched_curr(rq)														//抢占大多都是用这个接口
+			if (cpu == smp_processor_id())										//检测rq对应的cpu是否和当前运行的cpu一致
+				set_tsk_need_resched(curr)
+					set_tsk_thread_flag(tsk,TIF_NEED_RESCHED)					//设置 TIF_NEED_RESCHED 标志位
+				return
+			if (set_nr_and_not_polling(curr))
+				smp_send_reschedule(cpu)										//IPI通知其他核调度
+					scheduler_ipi
+						handle_IPI												//其他核的IPI中断中
+							scheduler_ipi
+								sched_ttwu_pending	
+									ttwu_do_activate(rq, p, p->sched_remote_wakeup ? WF_MIGRATED : 0, &rf)
+										activate_task(rq, p, en_flags)
+
+	2、中断或进程唤醒其他优先级更高的进程；
+		间 wake_up_process 流程
+	3、创建新进程高于当前运行的线程；
+		参考./2.do_fork.txt
+		_do_fork
+			copy_process(clone_flags, stack_start, stack_size, parent_tidptr, child_tidptr, NULL, trace, tls, NUMA_NO_NODE)
+				copy_creds(p, clone_flags)
+					retval = sched_fork(clone_flags, p)
+						p->sched_class->task_fork(p)
+							task_fork_fair(p)
+								if (sysctl_sched_child_runs_first && curr && entity_before(curr, se)) {	//如果设置了sysctl_sched_child_runs_first(表示子进程先运行)，且子线程的虚拟时间大于父线程虚拟时间
+									resched_curr(rq)
+			...
+			wake_up_new_task(p)
+				check_preempt_curr(rq, p, WF_FORK);
+	4、修改当前进程优先级高于修改前的优先级；
+		set_user_nice
+			if (p->prio - old_prio < 0 || (delta > 0 && task_running(rq, p)))
+				set_user_nice(struct task_struct *p, long nice)
+
+		prio_changed_fair
+			if (p->prio > oldprio)
+				resched_curr(rq)
+
+
+
+=============================
+
+
+2.3、调度点(抢占时机)：
+	1、禁止线程抢占后在使能时刻会_schedule(true)来检测是否有调度的需求(preempt_disable()/preempt_enable(), spin_lock);
+		见本文件的preempt_enable()流程中
+	2、1.1中的主动睡眠调度的情况；
+		
+	3、中断退出返回内核/用户空间之前；
+		3.1、中断退出返回内核：		./arch/arm64/kernel/entry.S
+			el1_irq
+				bl	preempt_schedule_irq
+					__schedule(true)
+		
+		3.2、中断退出返回用户空间：	./arch/arm64/kernel/entry.S
+			el0_irq
+				ret_to_user
+					and	x2, x1, #_TIF_WORK_MASK				==> (_TIF_NEED_RESCHED | _TIF_SIGPENDING | _TIF_NOTIFY_RESUME | _TIF_FOREIGN_FPSTATE | _TIF_UPROBE | _TIF_FSCHECK)
+					cbnz	x2, work_pending
+						bl	do_notify_resume						//arch\arm64\kernel\signal.c
+							if (thread_flags & _TIF_NEED_RESCHED) 
+								schedule()
+
+	4、系统调用返回用户空间时；
+		同3.2类似通过 ret_to_user 时检测,参考../6.interrupt/4.systemcall.txt
+		el0_svc:
+			mov	x0, sp
+			bl	el0_svc_handler
+			b	ret_to_user
+
+
+
+=========================================================================================================
+
+kernel2.6版本不支持内核抢占，加入内核抢占的原因：系统延迟和吞吐量之间的权衡。
+1)CONFIG_PREEMPT_NONE=y：不允许内核抢占，吞吐量最大的 Model，一般用于 Server 系统；
+2)CONFIG_PREEMPT_VOLUNTARY=y：在一些耗时较长的内核代码中主动调用cond_resched()让出CPU，对吞吐量有轻微影响，但是系统响应会稍微快一些。
+3)CONFIG_PREEMPT=y：除了处于持有 spinlock 时的 critical section，其他时候都允许内核抢占，响应速度进一步提升，吞吐量进一步下降，一般用于 Desktop / Embedded 系统。时间片用完的不算抢占？
+4)CONFIG_PREEMPT_RT=y，这个模式几乎将所有的 spinlock 都换成了 preemptable mutex，只剩下一些极其核心的地方仍然用禁止抢占的 spinlock，所以基本可以认为是随时可被抢占。
+
+
+=========================================================================================================
+
+调度的类型：
+1、刚创建完/运行完内核 线程就调度出去：
+	__switch_to
+    __schedule
+    schedule
+    kthreadd
+    ret_from_fork
+
+	__switch_to
+	__schedule
+	schedule
+    kthread_worker_fn
+    kthread
+    ret_from_fork
+
+2、工作队列创建或执行完后调度出去
+	__switch_to
+    __schedule
+    schedule
+    rescuer_thread
+    kthread
+    ret_from_fork
+
+	__switch_to
+    __schedule
+    schedule
+    worker_thread
+    kthread
+    ret_from_fork
+	
+	__switch_to
+	__schedule
+	schedule
+	kauditd_thread
+	kthread
+	ret_from_fork
+
+3、内核热拔插/软中断/中断等线程处理完后调度出去:
+	__switch_to
+    __schedule
+    schedule
+    smpboot_thread_fn
+    kthread
+    ret_from_fork
+
+	__switch_to
+    __schedule
+    schedule
+    irq_thread
+    kthread
+    ret_from_fork
+
+4、rcu线程运行完调度出去：
+	__switch_to
+    __schedule
+    schedule
+    rcu_gp_kthread
+    kthread
+    ret_from_fork
+
+	__switch_to
+    __schedule
+    schedule
+    rcu_tasks_kthread
+    kthread
+    ret_from_fork
+
+5、进程主动调度出去：
+	__switch_to
+    __schedule
+    schedule
+    schedule_timeout
+    schedule_timeout_interruptible
+    watchdog
+    kthread
+    ret_from_fork
+
+6、内存操作调度出去：
+	__switch_to
+    __schedule
+    schedule
+    ion_heap_deferred_free
+    kthread
+    ret_from_fork
+
+	__switch_to
+	__schedule
+	schedule
+	kswapd_try_to_sleep
+    kswapd
+    kthread
+    ret_from_fork
+
+
+99、其他：
+	__switch_to
+    __schedule
+    schedule
+    oom_reaper
+    kthread
+    ret_from_fork
+
+	__switch_to
+    __schedule
+    schedule
+    kcompactd
+    kthread
+    ret_from_fork
+
+
+
+
+
+
+

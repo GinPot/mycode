@@ -1,0 +1,95 @@
+enum {
+	ZONELIST_FALLBACK,		/* zonelist with fallback */
+#ifdef CONFIG_NUMA
+	ZONELIST_NOFALLBACK,	/* zonelist without fallback (__GFP_THISNODE) */
+#endif
+	MAX_ZONELISTS
+}
+
+ZONELIST_FALLBACK： 保存了所有zone的信息,后续申请内存时从_zonerefs依次取出zone尝试分配内存(如本NUMA节点无法分配就从其他节点分配)；
+	1，根据当前NUMA节点为中心，将其他NUMA节点排序，由近到远保存在node_order[]数组中
+	2，依次从node_order[]节点取出NUMA节点中的zone，从高到低保存到 pgdat->node_zonelists[ZONELIST_FALLBACK]._zonerefs；(ZONE_NORMAL>ZONE_DMA32)
+
+ZONELIST_NOFALLBACK： 若收到 __GFP_THISNODE 标志则只会从ZONELIST_NOFALLBACK对应的zone列表中获取zone进行分配
+	1，只把本NUMA节点的zone从高到低保存到_zonerefs; 
+
+
+policy_zone 保存这最优先分配的zone
+
+=============================================================================================================
+
+enum zone_type {
+	ZONE_DMA32,				内存在0x00000000~0xFFFFFFFF范围内的都属于这个zone;
+	ZONE_NORMAL,			内存大于0xFFFFFFFF的属于这个zone
+	ZONE_MOVABLE,			用于优化内存迁移场景，该zone内存都一定可以迁移(优化了普通zone中存在不可迁移的内存，这增加了迁移的难度，也加剧了内存碎片化)； 优化内存热拔插，
+	__MAX_NR_ZONES
+};
+
+默认 MAX_NUMNODES = 4
+#define MAX_ZONES_PER_ZONELIST (MAX_NUMNODES * MAX_NR_ZONES)
+
+struct zoneref {
+	struct zone *zone;	/* Pointer to actual zone */
+	int zone_idx;		/* zone_idx(zoneref->zone) */
+};
+
+struct zonelist {
+	struct zoneref _zonerefs[MAX_ZONES_PER_ZONELIST + 1];
+};
+
+typedef struct pglist_data {
+	...
+	struct zonelist node_zonelists[MAX_ZONELISTS];
+	...
+}
+
+
+=============================================================================================================
+
+build_all_zonelists()																			//主要是为各个NUMA节点中的各个zone，创建一个内存分配时的优先级顺序
+	if (system_state == SYSTEM_BOOTING) 
+		build_all_zonelists_init()
+			__build_all_zonelists(NULL)
+				...
+				for_each_online_node(nid)														//轮询每个NUMA节点
+					pg_data_t *pgdat = NODE_DATA(nid)
+					build_zonelists(pgdat)
+						while ((node = find_next_best_node(local_node, &used_mask)) >= 0)
+							...
+							node_order[nr_nodes++] = node										//以当前NUMA节点为中心，将其他NUMA节点排序，由近到远保存在node_order[]数组中
+						build_zonelists_in_node_order(pgdat, node_order, nr_nodes)
+							zonerefs = pgdat->node_zonelists[ZONELIST_FALLBACK]._zonerefs;
+							for (i = 0; i < nr_nodes; i++)										//由近到远取出NUMA节点
+								pg_data_t *node = NODE_DATA(node_order[i])
+								nr_zones = build_zonerefs_node(node, zonerefs)
+									zone = pgdat->node_zones + zone_type(MAX_NR_ZONES)			//从NUMA节点中zone高zone开始
+									if (managed_zone(zone))										//判断该zone是否有管理的页
+										zoneref_set_zone(zone, &zonerefs[nr_zones++])			// 888 依次放到pgdat->node_zonelists[ZONELIST_FALLBACK]._zonerefs中
+										check_highest_zone(zone_type)							//取最高的zone保存在policy_zone全局变量中
+						build_thisnode_zonelists(pgdat)
+							zonerefs = pgdat->node_zonelists[ZONELIST_NOFALLBACK]._zonerefs		//只把本NUMA节点的zone从高到低保存到_zonerefs
+							nr_zones = build_zonerefs_node(pgdat, zonerefs)
+			for_each_possible_cpu(cpu)
+				setup_pageset(&per_cpu(boot_pageset, cpu), 0);									//初始化zone结构体中维护0阶内存的结构体内存，在4.8.0.bootmem_init(Sparse_memory).txt被保存在zone结构体中，在6.mm_init.txt释放内存到伙伴系统时使用
+
+	vm_total_pages = nr_free_pagecache_pages()
+		return nr_free_zone_pages(gfp_zone(GFP_HIGHUSER_MOVABLE));								//gfp_zone()将传入的gfp_mask掩码转换为物理内存区域zone，返回这个物理内存区域是内存可分配区域的最高级内存区域，如果最高级内存区域不足以满足内存分配需求，则按照ZONE_HIGHMEM -> ZONE_NORMAL -> ZONE_DMA 的顺序依次降级
+			...
+			struct zonelist *zonelist = node_zonelist(numa_node_id(), GFP_KERNEL);				//根据当前cpu所处的NUMA，取出NUMA对应zonelist结构体
+			for_each_zone_zonelist(zone, z, zonelist, offset)									//根据zonelist顺序依次取出zone，获取zone中可以用的内存
+				unsigned long size = zone_managed_pages(zone);									// 888 这里实际取的是总的页数减去该zone所需的所有struct page结构所占的页面数(16M) = 262144(1G) - 4096(16M)
+				unsigned long high = high_wmark_pages(zone);
+				if (size > high)
+					sum += size - high;
+	if (vm_total_pages < (pageblock_nr_pages * MIGRATE_TYPES))									// 判断当前系统中内存页框数目，来决定是否启用流动分组机制(mobility grouping); 该机制可以在分配大内存块时减少内存碎片，通常只有内存足够大时才会启动，否则会提升内存的消耗而降低性能
+		page_group_by_mobility_disabled = 1;													// pageblock_nr_pages = 2^11,即伙伴系统中最高阶页块所包含的页面数，MIGRATE_TYPES=6
+	else
+		page_group_by_mobility_disabled = 0;
+
+
+
+
+
+
+
+

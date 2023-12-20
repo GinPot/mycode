@@ -1,0 +1,181 @@
+
+
+
+
+
+
+
+===================================================================================
+各类调度器的初始化
+
+
+start_kernel()
+	sched_init()
+		wait_bit_init()													//等待队列结构体初始化
+		...
+		init_rt_bandwidth(&def_rt_bandwidth, global_rt_period(), global_rt_runtime());		//初始化全局默认的rt和dl的CPU带宽控制数据结构, 默认1秒最多运0.95秒
+		init_dl_bandwidth(&def_dl_bandwidth, global_rt_period(), global_rt_runtime());		//来控制全局的DL和RT的使用带宽，防止实时进程CPU使用过多，从而导致普通的CFS进程出现饥饿的情况
+
+		//初始化默认的根域
+		//
+		//根域是dl/rt等实时进程做全局均衡的重要数据结构，以rt为例
+		//root_domain->cpupri 是这个根域范围内每个CPU上运行的RT任务的最高优先级，以及
+		//各个优先级任务在CPU上的分布情况，通过cpupri的数据，那么在rt enqueue/dequeue
+		//的时候，rt调度器就可以根据这个rt任务分布情况来保证高优先级的任务得到优先
+		//运行
+		init_defrootdomain()
+
+		//如果内核支持rt组调度(RT_GROUP_SCHED), 那么对RT任务的带宽控制将可以用cgroup
+		//的粒度来控制每个group里rt任务的CPU带宽使用情况
+		//
+		//RT_GROUP_SCHED可以让rt任务以cpu cgroup的形式来整体控制带宽
+		//这样可以为RT带宽控制带来更大的灵活性(没有RT_GROUP_SCHED的时候，只能控制RT的全局
+		//带宽使用，不能通过指定group的形式控制部分RT进程带宽)
+		init_rt_bandwidth(&root_task_group.rt_bandwidth,global_rt_period(), global_rt_runtime())
+
+		for_each_possible_cpu(i)															//为每个CPU初始化它的各种调度类的运行队列 
+			rq = cpu_rq(i)
+			...
+			//初始化rq上cfs/rt/dl的运行队列
+			//每个调度类型在rq上都有各自的运行队列，每个调度类都是各自管理自己的进程
+			//在pick_next_task()的时候，内核根据调度类优先级的顺序，从高到底选择任务
+			//这样就保证了高优先级调度类任务会优先得到运行
+			//
+			//stop和idle是特殊的调度类型，是为专门的目的而设计的调度类，并不允许用户
+			//创建相应类型的进程，所以内核也没有在rq里设计对应的运行队列
+			init_cfs_rq(&rq->cfs)
+			init_rt_rq(&rq->rt)
+			init_dl_rq(&rq->dl)
+
+			//CFS的组调度(group_sched)，可以通过cpu cgroup来对CFS进行进行控制
+			//可以通过cpu.shares来提供group之间的CPU比例控制(让不同的cgroup按照对应
+			//的比例来分享CPU)，也可以通过cpu.cfs_quota_us来进行配额设定(与RT的
+			//带宽控制类似)。CFS group_sched带宽控制是容器实现的基础底层技术之一
+			//
+			//root_task_group 是默认的根task_group，其他的cpu cgroup都会以它做为
+			//parent或者ancestor。这里的初始化将root_task_group与rq的cfs运行队列
+			//关联起来，这里做的很有意思，直接将root_task_group->cfs_rq[cpu] = &rq->cfs
+			//这样在cpu cgroup根下的进程或者cgroup tg的sched_entity会直接加入到rq->cfs
+			//队列里，可以减少一层查找开销。
+			root_task_group.shares = ROOT_TASK_GROUP_LOAD
+			...
+			init_cfs_bandwidth(&root_task_group.cfs_bandwidth)
+			init_tg_cfs_entry(&root_task_group, &rq->cfs, NULL, i, NULL)
+
+
+			init_tg_rt_entry(&root_task_group, &rq->rt, NULL, i, NULL)						//初始化rq上的rt运行队列，与上面的CFS的组调度初始化类似
+			
+			...
+			//这里将rq与默认的def_root_domain进行关联，如果是SMP系统，那么后面
+			//在sched_init_smp的时候，内核会创建新的root_domain，然后替换这里
+			//def_root_domain
+			rq_attach_root(rq, &def_root_domain)
+			...
+		...
+		init_sched_fair_class()																//注册CFS的SCHED_SOFTIRQ软中断服务函数,为周期性负载均衡以及nohz idle load balance而准备的
+		...
+		scheduler_running = 1
+
+================================================================================
+多核(调度域SMP/NUMP)调度初始化
+
+
+start_kernel()
+	arch_call_rest_init()
+		rest_init()
+			kernel_thread(kernel_init, NULL, CLONE_FS
+				kernel_init_freeable()
+					...
+					sched_init_smp()
+						sched_init_numa()													//检测系统里是否为 NUMA，如果是的则需要动态添加 NUMA 域
+						...
+						sched_init_domains(cpu_active_mask)									//调度域建立函数
+							...
+							doms_cur = alloc_sched_domains(ndoms_cur);
+							...
+							//doms_cur[0] 表示调度域需要覆盖的cpumask
+							//
+							//如果系统里用isolcpus=对某些CPU进行了隔离，那么这些CPU是不会加入到调度
+							//域里面，即这些CPU不会参于到负载均衡(这里的负载均衡包括DL/RT以及CFS)。
+							//这里用 cpu_map & housekeeping_cpumask(HK_FLAG_DOMAIN) 的方式将isolate
+							//cpu去除掉，从而在保证建立的调度域里不包含isolate cpu
+							//
+							cpumask_and(doms_cur[0], cpu_map, housekeeping_cpumask(HK_FLAG_DOMAIN))	
+							build_sched_domains(doms_cur[0], NULL)							//调度域建立的实现函数
+								...
+								//Linux里的绝大部分进程都为CFS调度类，所以CFS里的sched_domain将会被频繁
+								//的访问与修改(例如nohz_idle以及sched_domain里的各种统计)，所以sched_domain
+								//的设计需要优先考虑到效率问题，于是内核采用了percpu的方式来实现sched_domain
+								//CPU间的每级sd都是独立申请的percpu变量，这样可以利用percpu的特性解决它们
+								//间的并发竞争问题(1、不需要锁保护 2、没有cachline伪共享)
+								tl_asym = asym_cpu_capacity_level(cpu_map)
+								...
+								
+								//这里会遍历cpu_map里所有CPU，为这些CPU创建与物理拓扑结构对应(
+								//for_each_sd_topology)的多级调度域。
+								//
+								//在调度域建立的时候，会通过tl->mask(cpu)获得cpu在该级调度域对应
+								//的span(即cpu与其他对应的cpu组成了这个调度域)，在同一个调度域里
+								//的CPU对应的sd在刚开始的时候会被初始化成一样的(包括sd->pan、
+								//sd->imbalance_pct以及sd->flags等参数)。
+								for_each_cpu(i, cpu_map)
+								...
+								
+								//我们可以从2个调度域的实现看到sched_group的作用
+								//1、NUMA域 2、LLC域
+								//
+								//numa sched_domain->span会包含NUMA域上所有的CPU，当需要进行均衡的时候
+								//NUMA域不应该以cpu为单位，而是应该以socket为单位，即只有socket1与socket2
+								//极度不平衡的时候才在这两个SOCKET间迁移CPU。如果用sched_domain来实现这个
+								//抽象则会导致灵活性不够(后面的MC域可以看到)，所以内核会以sched_group来
+								//表示一个cpu集合，每个socket属于一个sched_group。当这两个sched_group不平衡
+								//的时候才会允许迁移
+								//
+								//MC域也是类似的，CPU可能是超线程，而超线程的性能与物理核不是对等的。一对
+								//超线程大概等于1.2倍于物理核的性能。所以在调度的时候，我们需要考虑超线程
+								//对之间的均衡性，即先要满足CPU间均衡，然后才是CPU内的超线程均衡。这个时候
+								//用sched_group来做抽象，一个sched_group表示一个物理CPU(2个超线程)，这个时候
+								//LLC保证CPU间的均衡，从而避免一种极端情况：超线程间均衡，但是物理核上不均衡
+								//的情况，同时可以保证调度选核的时候，内核会优先实现物理线程，只有物理线程
+								//用完之后再考虑使用另外的超线程，让系统可以更充分的利用CPU算力
+								for_each_cpu(i, cpu_map)
+								
+								//sched_group_capacity 是用来表示sg可使用的CPU算力
+								//
+								//sched_group_capacity 是考虑了每个CPU本身的算力不同(最高主频设置不同、
+								//ARM的大小核等等)、去除掉RT进程所使用的CPU(sg是为CFS准备的，所以需要
+								//去掉CPU上DL/RT进程等所使用的CPU算力)等因素之后，留给CFS sg的可用算力(因为
+								//在负载均衡的时候，不仅应该考虑到CPU上的负载，还应该考虑这个sg上的CFS
+								//可用算力。如果这个sg上进程较少，但是sched_group_capacity也较小，也是
+								//不应该迁移进程到这个sg上的)
+								for (i = nr_cpumask_bits-1; i >= 0; i--)
+								
+								//将每个CPU的rq与rd(root_domain)进行绑定，并且会检查sd是否有重叠
+								//如果是的则需要用destroy_sched_domain()将其去掉(所以我们可以看到
+								//intel的服务器是只有3层调度域，DIE域其实与LLC域重叠了，所以在这里
+								//会被去掉)
+								for_each_cpu(i, cpu_map)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+https://www.cnblogs.com/tencent-cloud-native/p/14767478.html
+
+
+
+
+
+

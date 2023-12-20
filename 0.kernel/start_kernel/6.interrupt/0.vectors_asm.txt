@@ -5,7 +5,7 @@ armv8手册讲到的进入异常前的处理：
 2、将PSTATE中的D A I F全部屏蔽;
 3、保存PC寄存器的值到ELR_ELx寄存器。
 
-D： Debug mask：watchpoint,breakpoint，以下4个为中断使能
+D： Debug mask：watchpoint,breakpoint
 A： SError (System Error) mask bit.
 I： IRQ mask bit.
 F： FIQ mask bit.
@@ -345,6 +345,15 @@ alternative_insn eret, nop, ARM64_UNMAP_KERNEL_AT_EL0
 	.endif
 	sb
 .endm
+
+work_pending:
+	mov	x0, sp				// 'regs'
+	bl	do_notify_resume
+#ifdef CONFIG_TRACE_IRQFLAGS
+	bl	trace_hardirqs_on		// enabled while in userspace
+#endif
+	ldr	x1, [tsk, #TSK_TI_FLAGS]	// re-check for single-step
+	b	finish_ret_to_user
 
 /*
  * "slow" syscall return path.

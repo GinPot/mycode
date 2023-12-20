@@ -1,0 +1,30 @@
+1.需要添加vdev-virtio-audio.so至qnx中/lib64/dll下
+2.需要在systemn.build.tmpl中
+#==========End of CMA region============
+
+#Adreno HW Version Region
+pass loc mem:0x02C00000,0x8,r=0x02C00000
+
+# TCSR Compute signaling 1
+pass loc mem:0x01fd8000,0x1000,r=0x01fd8000  #master_cfg
+pass loc mem:0x01fdd000,0x1000,rw=0x01fdd000 #master_signaling_kernel
+pass loc mem:0x01fdf000,0x1000,rw=0x01fdf000 #processor_1_status/clear/mask_kernel
+pass intr gic:271=271 #processor_1_kernel_irq
+## virtio audio for mengbo audio path
+## it seems gic:83 free ,so use it .
+
+vdev virtio-audio
+	loc 0x1c210000 
+	intr gic:840				
+	channel playback
+		host_pcmpath pcmPreferredp
+#	mixerctl "Output"
+#		direction playback
+	channel capture
+		host_pcmpath pcmPreferredc
+#	mixerctl "Input"
+#		direction capture
+
+语法配置，并编译生成linux-la.conf
+3.把virtio_audio.ko 编入/vendor/lib/moudles/下 并设置自动加载.ko
+4.需要在android中/vendor/lib/moudles/ insmod virtio_audio.ko

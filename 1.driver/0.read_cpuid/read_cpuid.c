@@ -2,14 +2,17 @@
 #include <linux/device.h>
 #include <asm/sysreg.h>
 #include <linux/io.h>
+#include <linux/dmaengine.h>
+
+
+
+
 
 //void __iomem * base_addr;
 
 static int read_cpuid_init(void)
 {
 	uint64_t __val;
-
-	
 	
 	printk("%s\n", __func__);
 	
@@ -33,7 +36,6 @@ static int read_cpuid_init(void)
 	//base_addr = ioremap((uint64_t)0xd5200000|(0x180000), 0x80);
 
 	//printk("%s 7: base_addr=0x%llnx\n", __func__, (uint64_t *)base_addr);
-
 	return 0;
 }
 

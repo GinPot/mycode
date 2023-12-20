@@ -1,0 +1,62 @@
+设备管理：
+	kobject												OK
+	device												OK
+	driver												OK
+
+中断管理：												OK
+	
+线程调度：
+	向上，各种会发生调度的场景分析；							OK
+	中间，高精度定时器的切换								OK
+	向下，调度器的线程选择过程、红黑树整理						OK
+	每个线程最后的堆栈										OK
+
+
+	均衡调度
+	idle 内核初始化、运行调度器过程
+	cpufre
+	1号进程调用init过程									好像没啥看到的(应该和用户空间运行程序有些类似？)
+
+
+
+内存管理：
+	cache												OK
+
+	idmap												OK
+	fixmap												OK
+	memblock											OK
+	sparse_memory
+
+
+	percpu
+	smmu
+
+文件系统：
+
+
+
+
+
+
+
+
+电源管理：
+	驱动：suspend/resume流程								OK?
+
+
+
+驱动常用接口：
+	wait_event_interruptible_timeout					OK
+	rcu													OK
+
+
+
+
+4、precpu
+50、kasan												动态检测内存错误的工具
+
+60、clk/rtc
+61、regulatr
+62、pinctrol
+
+

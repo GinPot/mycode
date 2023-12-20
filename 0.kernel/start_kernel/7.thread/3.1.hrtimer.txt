@@ -1,0 +1,173 @@
+
+
+1、因为红黑树在查询、插入、删除时的性能优势，hrtimer的核心组织结构选择了红黑树，树的最左下节点就是最早到期的定时器
+	1.1、根据hrtimer_init时传入的clock_id，决定对应的hrtimer实例挂在哪个 hrtimer_clock_base 对应的红黑树下
+2、每个cpu上定义了一个hrtimer_cpu_base的全局变量，用于管理属于自己的hrtimer
+
+
+
+什么时候更新的红黑树？
+	加入红黑树：hrtimer_start(&hrtimer_test, ns_to_ktime(1000000000), HRTIMER_MODE_REL_PINNED_SOFT);
+	移除红黑树：hrtimer_cancel(&hrtimer_test);
+	
+	只是更新时间，__hrtimer_get_next_event根据时间再确认下个中断时间？？？：
+	hrtimer_forward_now(hrtimer, ns_to_ktime(1000000000));
+		hrtimer_forward(timer, timer->base->get_time(), interval)
+			hrtimer_add_expires(timer, interval)
+				timer->node.expires = ktime_add_safe(timer->node.expires, time);
+				timer->_softexpires = ktime_add_safe(timer->_softexpires, time);
+================================================================================================================================================================================================================
+
+初始化
+start_kernel
+	hrtimers_init
+		hrtimers_prepare_cpu(smp_processor_id())
+			for (i = 0; i < HRTIMER_MAX_CLOCK_BASES; i++) {									//初始化当前cpu的hrtimer_cpu_base中所有时钟类型的hrtimer_clock_base
+				cpu_base->clock_base[i].cpu_base = cpu_base;
+				timerqueue_init_head(&cpu_base->clock_base[i].active);						//初始化本hrtimer_clock_base的红黑树
+			}
+		open_softirq(HRTIMER_SOFTIRQ, hrtimer_run_softirq)									//设置hrtimer软中断注册
+
+
+在__define_initcall(fn, 5)时设置切换标志
+fs_initcall(clocksource_done_booting)														//before device_initcall but after subsys_initcall
+	clocksource_select()
+		__clocksource_select(false)
+			best = clocksource_find_best(oneshot, skipcur)
+			timekeeping_notify(best)
+				tick_clock_notify()															//把所有cpu对应的 tick_cpu_sched 标志置位
+
+
+period向高精度定时器切换过程： 在每个cpu核起来时设置period定时器后，在timer中断处理过程中会调用hrtimer_run_queues去check tick_cpu_sched 状态，然后切换为高精度timer；
+tick_periodic
+	update_process_times
+		run_local_timers
+			hrtimer_run_queues
+				if (tick_check_oneshot_change(!hrtimer_is_hres_enabled()))					//主要确认 tick_cpu_sched 状态是否满足
+					hrtimer_switch_to_hres()
+						tick_init_highres()													//将timer中断处理函数切换为hrtimer_interrupt()
+						...
+						tick_setup_sched_timer()
+							ts->sched_timer.function = tick_sched_timer						// 888 中断处理函数中需要处理的function,之前中断需要处理的内容通过高精度API注册的过程个callback函数来处理
+								tick_sched_timer											//将处理period的中断函数的所有内容
+									tick_sched_do_timer(ts, now)
+										tick_do_update_jiffies64(now)
+											do_timer(++ticks)								//在nohz的情况下可能过了好多个tick_period才进来处理一次，所以也不一定只加1
+											update_wall_time()								//更新墙上时间
+									tick_sched_handle(ts, regs)
+										update_process_times(user_mode(regs))				//进程调度、负载相关的信息更新
+									hrtimer_forward(timer, now, tick_period)				//设置下一次到期时间
+================================================================================================================================================================================================================
+
+低精度模式：
+在未切到高精度定时器之前，hrtimer子系统运行在低精度模式下：
+tick_periodic
+	update_process_times
+		run_local_timers
+			hrtimer_run_queues()
+				if (__hrtimer_hres_active(cpu_base))										//若处于高精度模式下就直接退出
+					return
+				if (tick_check_oneshot_change(!hrtimer_is_hres_enabled()))					//check高精度切换的标志 tick_cpu_sched,若置位就开始切换高精度定时器
+					hrtimer_switch_to_hres()
+				now = hrtimer_update_base(cpu_base)											//更新获取各种时间
+				if (!ktime_before(now, cpu_base->softirq_expires_next))						//若now时间大于下一个到期的软timer的过期时间，表示有timer到期需要处理
+					cpu_base->softirq_expires_next = KTIME_MAX								//先将下个到期的软超时间设置为最大值，这算是默认值，等待hrtimer软中断处理函数重新更新下一个即将超时的软timer的过期时间
+					cpu_base->softirq_activated = 1											//设置softirq_activated表示已经激活了本CPU的hrtimer软中断 
+					raise_softirq_irqoff(HRTIMER_SOFTIRQ)									//触发HRTIMER软中断
+				__hrtimer_run_queues(cpu_base, now, flags, HRTIMER_ACTIVE_HARD)				//处理所有到期的硬timer，用户指定的hrtimer->function会在这里执行
+
+高精度模式
+hrtimer_interrupt
+	BUG_ON(!cpu_base->hres_active)															//如果当前不是高精度定时器模式，则触发oops使系统panic
+	entry_time = now = hrtimer_update_base(cpu_base)										//更新获取各种时间
+	cpu_base->in_hrtirq = 1																	//标识当前处于hrtimer_interrupt函数中
+	cpu_base->expires_next = KTIME_MAX														//同softirq_expires_next
+	if (!ktime_before(now, cpu_base->softirq_expires_next)) {								//同上
+		cpu_base->softirq_expires_next = KTIME_MAX;
+		cpu_base->softirq_activated = 1;
+		raise_softirq_irqoff(HRTIMER_SOFTIRQ);
+	}
+	__hrtimer_run_queues(cpu_base, now, flags, HRTIMER_ACTIVE_HARD)							//处理各种注册的hrtimer到期的callback函数
+	
+	expires_next = __hrtimer_get_next_event(cpu_base, HRTIMER_ACTIVE_ALL)					//更新接下来即将到期的定时器
+	cpu_base->expires_next = expires_next;
+	cpu_base->in_hrtirq = 0;
+	...
+	tick_program_event(expires_next, 0)														//使用最新的超时时间对定时事件设备(clock_event_device)进行重新编程，即指定下一次arch_timer的中断什么时候到来
+	...
+	now = hrtimer_update_base(cpu_base);													//上面重新设置新的定时时间失败可能是因为又到期了，所以继续处理，但有限制次数
+	cpu_base->nr_retries++;
+	if (++retries < 3)																		//重新获取当前时间，retry处理定时器 & 对定时事件设备进行编程
+		goto retry
+	...
+	delta = ktime_sub(now, entry_time)														//计算在hrtimer_interrupt中花费了多少时间，更新max_hang_time
+	if ((unsigned int)delta > cpu_base->max_hang_time)
+		cpu_base->max_hang_time = (unsigned int) delta;
+
+	if (delta > 100 * NSEC_PER_MSEC)
+		expires_next = ktime_add_ns(now, 100 * NSEC_PER_MSEC);
+	else
+		expires_next = ktime_add(now, delta);
+	tick_program_event(expires_next, 1);													//设置下一次定时器时间至少100ms,用于处理其他工作，而不是总在处理定时器的工作
+
+
+
+
+
+
+
+/*
+硬中断：
+[   63.816715] GinPot: hrtimer_tes_func.
+[   63.816737] CPU: 1 PID: 0 Comm: swapper/1 Tainted: G           O      5.2.0 #20
+[   63.816741] Hardware name: GinPot H5 (DT)
+[   63.816746] Call trace:
+[   63.816765]  dump_backtrace+0x0/0x168
+[   63.816774]  show_stack+0x14/0x20
+[   63.816785]  dump_stack+0xa8/0xcc
+[   63.816796]  hrtimer_tes_func+0x28/0x58 [hrtimer_test]
+[   63.816803]  __hrtimer_run_queues+0x120/0x1b8
+[   63.816809]  hrtimer_interrupt+0xd4/0x250
+[   63.816818]  arch_timer_handler_phys+0x28/0x40
+[   63.816829]  handle_percpu_devid_irq+0x80/0x140
+[   63.816835]  generic_handle_irq+0x24/0x38
+[   63.816842]  __handle_domain_irq+0x5c/0xb0
+[   63.816847]  gic_handle_irq+0x58/0xa8
+[   63.816853]  el1_irq+0xb8/0x180
+[   63.816860]  arch_cpu_idle+0x10/0x18
+[   63.816868]  do_idle+0xcc/0x170
+[   63.816875]  cpu_startup_entry+0x20/0x28
+[   63.816884]  secondary_start_kernel+0x188/0x1c8
+
+
+
+
+软中断：
+[  176.933020] GinPot: hrtimer_tes_func.
+[  176.933055] CPU: 1 PID: 0 Comm: swapper/1 Tainted: G           O      5.2.0 #20
+[  176.933059] Hardware name: GinPot H5 (DT)
+[  176.933064] Call trace:
+[  176.933084]  dump_backtrace+0x0/0x168
+[  176.933093]  show_stack+0x14/0x20
+[  176.933105]  dump_stack+0xa8/0xcc
+[  176.933116]  hrtimer_tes_func+0x28/0x58 [hrtimer_test]
+[  176.933125]  __hrtimer_run_queues+0x120/0x1b8
+[  176.933131]  hrtimer_run_softirq+0x68/0x98
+[  176.933137]  __do_softirq+0x11c/0x23c
+[  176.933145]  irq_exit+0xd0/0xd8
+[  176.933155]  __handle_domain_irq+0x60/0xb0
+[  176.933160]  gic_handle_irq+0x58/0xa8
+[  176.933166]  el1_irq+0xb8/0x180
+[  176.933173]  arch_cpu_idle+0x10/0x18
+[  176.933182]  do_idle+0xcc/0x170
+[  176.933189]  cpu_startup_entry+0x20/0x28
+[  176.933198]  secondary_start_kernel+0x188/0x1c8
+
+*/
+
+
+
+
+
+
+

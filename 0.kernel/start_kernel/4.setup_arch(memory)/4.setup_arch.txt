@@ -1,0 +1,73 @@
+内核镜像没有2M对齐会重定向成2M对齐；
+设备树会复制到内存顶部64M左右的位置；
+
+
+0.__create_page_tables					汇编阶段映射了kernel image的物理内存段的页表(只用了3级映射)： 先是用页表idmap_pg_dir，使能mmu时又切换到init_pg_dir页表上；
+											PGD = idmap_pg_dir/init_pg_dir
+											PUD = PGD + 4K
+											PMD = PUD + 4K
+
+1.early_fixmap_init();					全局定义了fixmap的PUD/PMD/PTE的物理地址，将FIXADDR_START 虚拟地址对应 pgd, pud, pmd, pte配置，但最后需要映射的物理地址信息还没有配置
+
+2.setup_machine_fdt(__fdt_pointer);		用init_pg_dir页表，基于early_fixmap_init设置的PGD，PUD，PMD； 映射了dtb的物理内存(只用了3级映射)； 把设备树中整体的memory节点信息添加到memblock中；
+
+3.arm64_memblock_init();				1.设置dtb、_text、initrd等固定内存为reserved memblock，读取设备树获取reserved-memory节设置为eserved或remove memblock；
+										2.RESERVEDMEM_OF_DECLAR定义的CMA等特殊内存的特殊处理；
+										3.处理其他内存相关reserved内存，如crashkernel、elfcorehdr；
+										4.设置系统默认的cma内存:
+											(1)该信息默认从defconfig得到size(默认32M)后再去memblock中申请；
+											(2)也可以从cmline中设置；
+											(3)亦或是设备树中配置.
+
+
+setup_arch()											// ./arch/arm64/kernel/setup.c
+	init_mm.start_code = (unsigned long) _text;			//填充内核线程用的mm_struct结构体信息
+	init_mm.end_code   = (unsigned long) _etext;		//主要是内核vmlinux.lds.S中定义的一些内核镜像虚拟地址信息
+	init_mm.end_data   = (unsigned long) _edata;
+	init_mm.brk	   = (unsigned long) _end;
+	...
+	early_fixmap_init();					//初始化fixmap段内存的pgd、pud、pmd
+	early_ioremap_setup();					//设置动态申请释放的fixmap段
+	
+	setup_machine_fdt(__fdt_pointer);		//__fdt_pointer参数在head.s阶段保存的x0设备树地址，解析设备树的ramdisk、bootargs、address/size-cells、memory等信息，并把memory添加到memblock数组中
+
+	parse_early_param();					//驱动中有定义early_param("xx",func)会放到".init.setup"段中，且启动参数中有对应的xx字符，则会调用func函数
+	
+	local_daif_restore(DAIF_PROCCTX_NOIRQ);
+		write_sysreg(0x00000080, daif);		//使能fiq(但armv8中应该是无用)、SError、Watchpoint、Breakpoint、Software Step等异常
+
+	cpu_uninstall_idmap();					//idmap的页表基地址ttbr0_el1设置为empty_zero_page,无效所有的tlb，mmu的缓存,idmap_pg_dir保存的信息仍然还在,后续startup其他核时使能mmu还需要！
+
+	xen_early_init();						//未支持
+	
+	efi_init();								//一般嵌入式未使用
+	
+	arm64_memblock_init();					//除了基本的memblock管理，代码中还会定义RESERVEDMEM_OF_DECLARE()的compatible和函数，遍历所有reserved-memory节点确认是否匹配compatible来调用对应的函数
+
+	paging_init();							//主要是重新设置swapper_pg_dir，替换init_pg_end，并释放之前的init_pg_end对应的memblock
+		map_kernel()						//以swapper_pg_dir为页表基地址重新映射内核镜像的_text、__start_rodata、__inittext_begin、__initdata_begin、_data
+		map_mem()							//以swapper_pg_dir为页表基地址线性映射所有内存
+
+	acpi_table_upgrade();					//ACPI – the Advanced Configuration & Power Interface;是Intel（i386，x86_64，IA64）平台的标准固件规范，绝大部分OS需要从BIOS得到的信息都可以从ACPI得到
+	acpi_boot_table_init();
+
+	if (acpi_disabled)
+		unflatten_device_tree();			//展开设备树
+
+	bootmem_init()							//numa的初始化(pg_data_t结构体), sparsememory初始化(mem_section,page结构体), zone分配, 依赖zone初始化左边提到的结构体，为伙伴算法做准备
+	...
+	if (acpi_disabled)
+		psci_dt_init()						//解析psci节点,设置上层调用pcsi相关接口回调，是后续唤醒其他核做准备
+
+
+
+
+
+
+
+
+
+
+
+
+
