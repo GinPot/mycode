@@ -11,7 +11,7 @@
 
 2.setup_machine_fdt(__fdt_pointer);		用init_pg_dir页表，基于early_fixmap_init设置的PGD，PUD，PMD； 映射了dtb的物理内存(只用了3级映射)； 把设备树中整体的memory节点信息添加到memblock中；
 
-3.arm64_memblock_init();				1.设置dtb、_text、initrd等固定内存为reserved memblock，读取设备树获取reserved-memory节设置为eserved或remove memblock；
+3.arm64_memblock_init();				1.设置dtb、_text、initrd等固定内存为reserved memblock，读取设备树获取reserved-memory节设置为reserved或remove memblock；
 										2.RESERVEDMEM_OF_DECLAR定义的CMA等特殊内存的特殊处理；
 										3.处理其他内存相关reserved内存，如crashkernel、elfcorehdr；
 										4.设置系统默认的cma内存:
@@ -44,7 +44,7 @@ setup_arch()											// ./arch/arm64/kernel/setup.c
 	
 	arm64_memblock_init();					//除了基本的memblock管理，代码中还会定义RESERVEDMEM_OF_DECLARE()的compatible和函数，遍历所有reserved-memory节点确认是否匹配compatible来调用对应的函数
 
-	paging_init();							//主要是重新设置swapper_pg_dir，替换init_pg_end，并释放之前的init_pg_end对应的memblock
+4.	paging_init();							//主要是重新设置swapper_pg_dir，替换init_pg_end，并释放之前的init_pg_end对应的memblock
 		map_kernel()						//以swapper_pg_dir为页表基地址重新映射内核镜像的_text、__start_rodata、__inittext_begin、__initdata_begin、_data
 		map_mem()							//以swapper_pg_dir为页表基地址线性映射所有内存
 

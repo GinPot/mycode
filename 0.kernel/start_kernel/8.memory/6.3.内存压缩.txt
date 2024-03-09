@@ -1,0 +1,36 @@
+内存碎片整理。它会在四个地方调用到：
+	1.内核从伙伴系统以min阀值获取连续页框，但是连续页框又不足时
+	2.当需要从指定地方获取连续页框，但是中间有页框正在使用时。
+	3.因为内存短缺导致kswapd被唤醒时，在进行内存回收之后会进行内存碎片整理。
+	4.将1写入sysfs中的/vm/compact_memory或/sys/devices/system/node/nodexx/compact时，系统会对所有zone进行内存碎片整理。
+
+
+
+linux提出了碎片指数fragindex ，取值范围为[0,1000].
+	fragindex越接近于0，表面内存分配原因由内存不足造成
+	fragindex越接近于1000，表面内分配失败原因有内碎片化造成。
+	
+cat /proc/sys/vm/extfrag_threshold
+	extfrag_threshold值默认值未500，该值越大linux会将多数的linux内存申请失败原因归结于zone区域内存不足，反之该值越小linux会将多数内存分配失败原因归结于zone内存碎片化严重
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -112,3 +112,4 @@ static inline void atomic_add(int i, atomic_t *v)							//include\asm-generic\at
 									
 	atomic_sub(2, &at_tv);													//原子减2
 
+	atomic_read(&at_tv)														//读操作

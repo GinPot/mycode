@@ -1,29 +1,26 @@
 
-
-
-
 1,如果是UMA，就被看作只有一个节点的NUMA系统;
 
 2,struct mem_section 用一个二维数组指针管理，第一维大小固定(NR_SECTION_ROOTS=1024)，第二维个数是根据有几个1G的内存申请几个 SECTIONS_PER_ROOT=256大小；
 	(先是申请1024个struct mem_section结构体指针大小内存(即可以管理1024个256G)，根据内存大小申请256个struct mem_section结构体大小内存(内存小于256G就申请一次256个struct mem_section结构体,内存在256~512之间就申请2次256个struct mem_section结构体))
 
-	mem_section[0x400(NR_SECTION_ROOTS=1024)][0x100(SECTIONS_PER_ROOT)]							mem_section[0][1]来记录0x40000000~0x80000000范围的物理地址，nid(NUMA_id)为0
+	mem_section[0x400(NR_SECTION_ROOTS=1024)][0x100(SECTIONS_PER_ROOT)]							mem_section[0][1]来记录0x40000000~0x80000000范围的物理地址，nid(NUMA_id)为0(这里一位数组0不是表示NUMA_ID)
 
-3,一个struct mem_section结构体管理1G内存,同时需要：
-	3.1,32*8=256字节内存保存pageblock_flags,	用memblock申请内存，虚拟地址取内核分配的虚拟地址
-	3.1,256K*64=16M内存维护每一个页的状态 section_mem_map(struct page),	用memblock申请内存，虚拟地址用VMEMMAP_START指定的虚拟内存
+3,一个struct mem_section 结构体管理1G内存,同时需要：
+	3.1,32*8=256字节内存保存 pageblock_flags,	用memblock申请内存，虚拟地址取内核分配的虚拟地址
+	3.1,256K*64=16M内存维护每一个页的状态(struct page),	用memblock申请内存，虚拟地址用VMEMMAP_START指定的虚拟内存
 
 		一个struct mem_setion对应PAGES_PER_SECTION(256K)个page(4K) = 4K * 256K = 1G
-		256Kg个struct page所占用的空间为256K*64=16M
+		256K个struct page所占用的空间为256K*64=16M
 
 4,先统计ZONE_DMA32内存，超过这部分的才会统计到ZONE_NORMAL,没有超过的话ZONE_NORMAL则为空;
 
-5,以NUMA_id初始化对应的pg_data_t(pg_data_t)结构体,计算可以用大小；
+5,以NUMA_id初始化对应的 pg_data_t(pglist_data)结构体,计算可以用大小；
 	初始化其中的各个zone的结构体, 其重要的zone结构体中管理内存申请的配置： 
-	1,pcp(pageset),只要是维护0位阶的内存页框，per-cpu内存(申请释放比较频繁)
+	1,pcp(pageset),只是维护0位阶的内存页框，per-cpu内存(申请释放比较频繁)
 	2,初始化free_area 2^0,2^1,2^2,,,保存2^n可用块的链表；
 	3,初始化zone里所有也对应的struct page结构体(在(3)中申请的)；
-	4,将所有页的内存配置为可移动的内存MIGRATE_MOVABLE
+	4,将所有页的内存配置为可移动的内存 MIGRATE_MOVABLE
 
 
 
@@ -34,9 +31,9 @@
 初始化伙伴系统相关数据结构：
 	每个zone区域的free_area中所有free list链表初始化
 	每个zone区域中所有的页框描述符struct page的初始化
-	每个zone区域中的所有pageblock对应迁移类型的初始化
-	内存分配时每个内存节点的优先级列表node_zonelists初始化
-	每个zone区域的每CPU成员pageset的初始化
+	每个zone区域中的所有 pageblock 对应迁移类型的初始化
+	内存分配时每个内存节点的优先级列表 node_zonelists 初始化
+	每个zone区域的每CPU成员 pageset 的初始化
 
 ======================================================================================
 
@@ -63,11 +60,11 @@ SECTIONS_SHIFT = MAX_PHYSMEM_BITS - SECTION_SIZE_BITS = 18
 
 SECTIONS_PER_ROOT = PAGE_SIZE(0x1000) / sizeof(struct mem_section)(0x10) = 0x100 = 256
 
-pageblock_order=9
+pageblock_order=9											//该系统page block order为9，即512个页组成一个block也迁移属性，再这一个block内512个也迁移属性相同
 NR_PAGEBLOCK_BITS=4
 1UL << (PFN_SECTION_SHIFT - pageblock_order) = 512
-SECTION_BLOCKFLAGS_BITS = ((1UL << (PFN_SECTION_SHIFT - pageblock_order)) * NR_PAGEBLOCK_BITS) = 2048
-usemap_size = (2048 / 64) = 32 * 8 = 256
+SECTION_BLOCKFLAGS_BITS = ((1UL << (PFN_SECTION_SHIFT - pageblock_order)) * NR_PAGEBLOCK_BITS) = 2048			//每个迁移属性需要4个bit位，即一个block总共需要512*4=2048个bit位
+usemap_size = (2048 / 64) = 32 * 8 = 256					//实际上可以看出8bit一个字节，所以需要2048/8=256个字节
 
 
 ARM64_SWAPPER_USES_SECTION_MAPS = 1
@@ -105,7 +102,7 @@ if (pfn_valid(start_pfn))							//页号的有效性检查
 ========================================================================================
 
 
-bootmem_init()
+bootmem_init()																		// 888 把cpu和各内存块与NUMA节点关联
 	...
 	early_memtest(min << PAGE_SHIFT, max << PAGE_SHIFT)								//需要再cmdline中设置memtest参数才会处理相关逻辑： 测试内存是否有效，无效内存将会memblock_reserve，一般uboot中已经测试？
 	...
@@ -145,67 +142,68 @@ bootmem_init()
 			mminit_validate_memmodel_limits(&start, &end)								//检查内存的有效性
 			...
 			for (pfn = start; pfn < end; pfn += PAGES_PER_SECTION)						// PAGES_PER_SECTION * 4K 即1G大小，这里的值都是fpn
-				unsigned long section = pfn_to_section_nr(pfn)							// 从这就可以看出section是从ddr的0地址开始，0x0~0x40000000的sectionid=0，0x40000000~0x80000000的sectionid=1，依次类推,,,
+				unsigned long section = pfn_to_section_nr(pfn)							// 从这就可以看出section是从ddr的0地址开始，0x0~0x40000000的 sectionid=0，0x40000000~0x80000000的sectionid=1，依次类推,,,
 
 				sparse_index_init(section, nid)
 					if (mem_section[root])												//判断指针是否存在
 					section = sparse_index_alloc(nid)									//申请struct mem_section结构体的内存
+						section = memblock_alloc_node(SECTIONS_PER_ROOT * sizeof(struct mem_section), SMP_CACHE_BYTES, nid)		//申请SECTIONS_PER_ROOT(256)个struct mem_section结构体大小的内存
 					mem_section[root] = section											//地址保存到mem_section指针数组中
-				set_section_nid(section, nid)											//将sectionid对应的哪个nid的内存(UMA系统的话就都是0)保存在section_to_node_table全局数组中，大小1024
-				s = __nr_to_section(section)											//SECTIONS_PER_ROOT(0x100)大小为一维数组大小，二维数组的的id还是等于1,对比H5，0的对应的0x0~0x40000000仍然空出来了
-				if (!ms->section_mem_map) {												//设置section_mem_map
+				set_section_nid(section, nid)											//将sectionid对应的哪个nid的内存(UMA系统的话就都是0)保存在 section_to_node_table 全局数组中，大小1024
+				s = __nr_to_section(section)											//SECTIONS_PER_ROOT(0x100)大小为一维数组大小，二维数组的id还是等于1,对比H5，0的对应的0x0~0x40000000仍然空出来了
+				if (!ms->section_mem_map) {												//设置 section_mem_map
 					ms->section_mem_map = sparse_encode_early_nid(nid) |				// ms->section_mem_map = nid << 3 | SECTION_IS_ONLINE | SECTION_MARKED_PRESENT
 									SECTION_IS_ONLINE;
 					section_mark_present(ms);
 
 	sparse_init()
-		unsigned long pnum_begin = first_present_section_nr()							//获取mem_section数组第一个存在元素的num
+		unsigned long pnum_begin = first_present_section_nr()							//获取 mem_section 数组第一个存在元素的num
 		nid_begin = sparse_early_nid(__nr_to_section(pnum_begin))						//获取第一个mem_section对应内存所属的nid(NUMA_id)
 		...
 		set_pageblock_order()															// H5中未实现
 		for_each_present_section_nr(pnum_begin + 1, pnum_end)							// 获取最后一个pnum_end值，H5中pnum_end=-1,不会进入里面循环
-		...
-		sparse_init_nid(nid_begin, pnum_begin, pnum_end, map_count)
 			...
-			usemap = sparse_early_usemaps_alloc_pgdat_section(NODE_DATA(nid), usemap_size() * map_count)			// mem_section->pageblock_flags指针指向的内存256字节
-			sparse_buffer_init(map_count * section_map_size(), nid)													// 申请一个mem_section中所有(262144,256K*map_count)个struct page(64)结构体需要的内存(总共16M内存)，地址存在sparsemap_buf全局指针上；后续和VMEMMAP_START虚拟地址建立页表映射；目前是通过这个虚拟地址++pfn来访问page地址
-				sparsemap_buf = memblock_alloc_try_nid_raw(size, PAGE_SIZE, addr, MEMBLOCK_ALLOC_ACCESSIBLE, nid);
-				sparsemap_buf_end = sparsemap_buf + size;	
-			for_each_present_section_nr(pnum_begin, pnum)															//循环处理所有 mem_section 结构体
+			sparse_init_nid(nid_begin, pnum_begin, pnum_end, map_count)
 				...
-				map = sparse_mem_map_populate(pnum, nid, NULL)
+				usemap = sparse_early_usemaps_alloc_pgdat_section(NODE_DATA(nid), usemap_size() * map_count)			// mem_section->pageblock_flags 指针指向的内存256字节
+				sparse_buffer_init(map_count * section_map_size(), nid)													// 申请一个mem_section中所有(262144,256K*map_count)个struct page(64)结构体需要的内存(总共16M内存)，地址存在sparsemap_buf全局指针上；后续和VMEMMAP_START虚拟地址建立页表映射；目前是通过这个虚拟地址++pfn来访问page地址
+					sparsemap_buf = memblock_alloc_try_nid_raw(size, PAGE_SIZE, addr, MEMBLOCK_ALLOC_ACCESSIBLE, nid);
+					sparsemap_buf_end = sparsemap_buf + size;	
+				for_each_present_section_nr(pnum_begin, pnum)															//循环处理所有 mem_section 结构体
 					...
-					map = pfn_to_page(pnum * PAGES_PER_SECTION)														//实际上获取VMEMMAP_START的虚拟地址
-					start = (unsigned long)map;
-					end = (unsigned long)(map + PAGES_PER_SECTION)													// 888 指针加法，实际是 end = map + PAGES_PER_SECTION*sizeof(struct page)==> 0xffff7e0001000000 = 0xffff7e0000000000 + 0x40000*64
-					vmemmap_populate(start, end, nid, altmap)														// 3级映射，指定VMEMMAP_START虚拟地址，申请2M内存与指定的虚拟地址做映射
-					do {
-						next = pmd_addr_end(addr, end)																// 3级映射，2M粒度，即相当于32K个struct page一组，next = addr + 0x200000
-						pgdp = vmemmap_pgd_populate(addr, node);
-							pgd_t *pgd = pgd_offset_k(addr)															//获取保存下一级PUD物理地址的虚拟地址(PGD+offset)
-							if (pgd_none(*pgd))																		//若改虚拟地址是空的话
-								void *p = vmemmap_alloc_block_zero(PAGE_SIZE, node)									//通过memblock申请一页物理地址
-								pgd_populate(&init_mm, pgd, p)														//将申请的物理地址保存在PGD+offset的虚拟地址中，返回(PGD+offset)的虚拟地址
-						pudp = vmemmap_pud_populate(pgdp, addr, node)												//同上， 先获取保存下二级PMD物理地址的虚拟地址(PUD+offset)
-																													虚拟地址为空话memblock申请一页物理地址，然后把物理地址保存在PUD+offset虚拟地址中，返回(PUD+offset)虚拟地址
-						pmdp = pmd_offset(pudp, addr)																//获取保存3级PTE的物理地址的虚拟地址(PMD+offset)
-						if (pmd_none(READ_ONCE(*pmdp)))																//判断虚拟地址中是否为空
-							p = vmemmap_alloc_block_buf(PMD_SIZE, node)
-								ptr = sparse_buffer_alloc(size)														//通过上面已经申请好的内存 sparsemap_buf 拆分获取当前需要的内存
-							pmd_set_huge(pmdp, __pa(p), __pgprot(PROT_SECT_NORMAL))
-								pmd_t new_pmd = pfn_pmd(__phys_to_pfn(phys), sect_prot)								//设置内存权限配置
-								...
-								set_pmd(pmdp, new_pmd)																//将申请的物理地址保存到(PMD+offset)虚拟地址中
+					map = sparse_mem_map_populate(pnum, nid, NULL)
 						...
-					} while (addr = next, addr != end);
-				check_usemap_section_nr(nid, usemap)																//H5默认未开启
-				sparse_init_one_section(__nr_to_section(pnum), pnum, map, usemap)
-					ms->section_mem_map &= ~SECTION_MAP_MASK														清除除bit[0~2]其他所有bit									
-					ms->section_mem_map |= sparse_encode_mem_map(mem_map, pnum) | SECTION_HAS_MEM_MAP
-					ms->pageblock_flags = usemap
+						map = pfn_to_page(pnum * PAGES_PER_SECTION)														//实际上获取VMEMMAP_START的虚拟地址
+						start = (unsigned long)map;
+						end = (unsigned long)(map + PAGES_PER_SECTION)													// 888 指针加法，实际是 end = map + PAGES_PER_SECTION*sizeof(struct page)==> 0xffff7e0001000000 = 0xffff7e0000000000 + 0x40000*64
+						vmemmap_populate(start, end, nid, altmap)														// 3级映射，指定VMEMMAP_START虚拟地址，申请2M内存与指定的虚拟地址做映射
+						do {
+							next = pmd_addr_end(addr, end)																// 3级映射，2M粒度，即相当于32K个struct page一组，next = addr + 0x200000
+							pgdp = vmemmap_pgd_populate(addr, node);
+								pgd_t *pgd = pgd_offset_k(addr)															//获取保存下一级PUD物理地址的虚拟地址(PGD+offset)
+								if (pgd_none(*pgd))																		//若改虚拟地址是空的话
+									void *p = vmemmap_alloc_block_zero(PAGE_SIZE, node)									//通过memblock申请一页物理地址
+									pgd_populate(&init_mm, pgd, p)														//将申请的物理地址保存在PGD+offset的虚拟地址中，返回(PGD+offset)的虚拟地址
+							pudp = vmemmap_pud_populate(pgdp, addr, node)												//同上， 先获取保存下二级PMD物理地址的虚拟地址(PUD+offset)
+																														虚拟地址为空话memblock申请一页物理地址，然后把物理地址保存在PUD+offset虚拟地址中，返回(PUD+offset)虚拟地址
+							pmdp = pmd_offset(pudp, addr)																//获取保存3级PTE的物理地址的虚拟地址(PMD+offset)
+							if (pmd_none(READ_ONCE(*pmdp)))																//判断虚拟地址中是否为空
+								p = vmemmap_alloc_block_buf(PMD_SIZE, node)
+									ptr = sparse_buffer_alloc(size)														//通过上面已经申请好的内存 sparsemap_buf 拆分获取当前需要的内存
+								pmd_set_huge(pmdp, __pa(p), __pgprot(PROT_SECT_NORMAL))
+									pmd_t new_pmd = pfn_pmd(__phys_to_pfn(phys), sect_prot)								//设置内存权限配置
+									...
+									set_pmd(pmdp, new_pmd)																//将申请的物理地址保存到(PMD+offset)虚拟地址中
+							...
+						} while (addr = next, addr != end);
+					check_usemap_section_nr(nid, usemap)																//H5默认未开启
+					sparse_init_one_section(__nr_to_section(pnum), pnum, map, usemap)
+						ms->section_mem_map &= ~SECTION_MAP_MASK														清除除bit[0~2]其他所有bit									
+						ms->section_mem_map |= sparse_encode_mem_map(mem_map, pnum) | SECTION_HAS_MEM_MAP
+						ms->pageblock_flags = usemap
+		
+				sparse_buffer_fini()																					//释放未使用完的 sparsemap_buf 内存
 	
-			sparse_buffer_fini()																					//释放未使用完的sparsemap_buf内存
-
 
 	zone_sizes_init(min, max)
 		max_zone_pfns[ZONE_DMA32] = PFN_DOWN(max_zone_dma_phys()) = PFN_DOWN(min(0 + (1ULL << 32), memblock_end_of_DRAM())) = PFN_DOWN(memblock_end_of_DRAM());			//计算这2个zone的最大值
@@ -271,7 +269,8 @@ bootmem_init()
 							if (!size)
 								continue																		//这里处理各个zone信息，若size为0,,则不处理下面操作
 							set_pageblock_order()																//H5为空函数
-							setup_usemap(pgdat, zone, zone_start_pfn, size)										//同上，配置了CONFIG_SPARSEMEM情况下改内存 mem_section 结构体中
+							setup_usemap(pgdat, zone, zone_start_pfn, size)										//同上，配置了CONFIG_SPARSEMEM情况下
+								zone->pageblock_flags = memblock_alloc_node(usemapsize, SMP_CACHE_BYTES, pgdat->node_id);			//申请zone的 pageblock_flags 内存
 							init_currently_empty_zone(zone, zone_start_pfn, size)								// 888 初始化zone的free_area列表
 								zone_init_free_lists(zone)
 									for_each_migratetype_order(order, t)
@@ -280,7 +279,7 @@ bootmem_init()
 							memmap_init(size, nid, j, zone_start_pfn)
 								memmap_init_zone(size, nid, zone, start_pfn, MEMMAP_EARLY, NULL)
 									...
-									for (pfn = start_pfn; pfn < end_pfn; pfn++)
+									for (pfn = start_pfn; pfn < end_pfn; pfn++)									//外部循环每个zone，内部循环zone中的每个页
 										if (context == MEMMAP_EARLY)											//先关内存检查、过滤
 											if (!early_pfn_valid(pfn))											//检查有效性
 											if (!early_pfn_in_nid(pfn, nid))									//未配置CONFIG_NODES_SPAN_OTHER_NODES,函数为空
@@ -289,48 +288,89 @@ bootmem_init()
 										page = pfn_to_page(pfn)													// 888 通过过指定的VMEMMAP_START虚拟地址+pfn,找到pfn对应的struct page结构地址
 										__init_single_page(page, pfn, zone, nid)								// 888 初始化这页内存对应的struct page结构
 										...
-										set_pageblock_migratetype(page, MIGRATE_MOVABLE)						//先将所有页都配置为可以移动，MIGRATE_MOVABLE
+										if (!(pfn & (pageblock_nr_pages - 1)))									//每256个页设置一次
+											set_pageblock_migratetype(page, MIGRATE_MOVABLE)					//先将所有页都配置为可以移动，MIGRATE_MOVABLE
+										
 
 
 
+=====================================================================================================================================
+enum zone_stat_item {
+	/* First 128 byte cacheline (assuming 64 bit words) */
+	NR_FREE_PAGES,
+	NR_ZONE_LRU_BASE, /* Used only for compaction and reclaim retry */
+	NR_ZONE_INACTIVE_ANON = NR_ZONE_LRU_BASE,
+	NR_ZONE_ACTIVE_ANON,
+	NR_ZONE_INACTIVE_FILE,
+	NR_ZONE_ACTIVE_FILE,
+	NR_ZONE_UNEVICTABLE,
+	NR_ZONE_WRITE_PENDING,	/* Count of dirty, writeback and unstable pages */
+	NR_MLOCK,		/* mlock()ed pages found and moved off LRU */
+	NR_PAGETABLE,		/* used for pagetables */
+	NR_KERNEL_STACK_KB,	/* measured in KiB */
+	/* Second 128 byte cacheline */
+	NR_BOUNCE,
+#if IS_ENABLED(CONFIG_ZSMALLOC)
+	NR_ZSPAGES,		/* allocated in zsmalloc */
+#endif
+	NR_FREE_CMA_PAGES,
+	NR_VM_ZONE_STAT_ITEMS };
 
+atomic_long_t vm_zone_stat[NR_VM_ZONE_STAT_ITEMS];			//局数vm_zone_stat数组中获取伙伴系统剩余内存，包括所有NUMA节点和所有zone
 
 
 
 numa:
 https://zhou-yuxin.github.io/articles/2018/Linux%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%E2%80%94%E2%80%94%E8%8E%B7%E5%8F%96%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E5%B8%83%E5%B1%80%E3%80%81%E5%88%92%E5%88%86%E5%86%85%E5%AD%98%E5%8C%BA%E4%B8%8E%E5%88%9B%E5%BB%BANUMA%E8%8A%82%E7%82%B9/index.html
 
-在NUMA架构下，每一个Node都会对应一个struct pglist_data，在UMA架构中只会使用唯一的一个struct pglist_data结构
+在NUMA(Non Uniform Memory Access,非一致性内存访问)架构下，每一个Node都会对应一个struct pglist_data，在UMA架构中只会使用唯一的一个struct pglist_data结构
+UMA(Uniform Memory Access,一致性内存访问)
 
 struct pglist_data 关键字段
 	struct zone node_zones[];           	//对应的ZONE区域，比如ZONE_DMA，ZONE_NORMAL等
-	struct zonelist_node_zonelists[];
+	struct zonelist node_zonelists[];
 
 	unsigned long node_start_pfn;           //节点的起始内存页面帧号
-	unsigned long node_present_pages;    	//该NUMA_id总共可用的页面数，不是去掉已经被使用，是去掉空洞区域的
+	unsigned long node_present_pages;    	//该NUMA_id总共可用的页面数，不是去掉已经被使用，是去掉空洞区域的；可以认为是系统总共的内存
 	unsigned long node_spanned_pages;  		//总共的页面数，包括有空洞的区域
 
 	wait_queue_head_t kswapd_wait;        	//页面回收进程使用的等待队列
 	struct task_struct *kswapd;             //页面回收进程
 
+	unsigned long		min_unmapped_pages;	//可以回收的页小于这个值将不进行内存回收
+	unsigned long		min_slab_pages;
+
+内核会为每个NUMA节点分配一个kswapd进程用于回收不经常使用的页面
 =============================================
 
 struct zone 关键字段
-	unsigned long watermark[];          	//水位值，WMARK_MIN/WMARK_LOV/WMARK_HIGH，页面分配器和kswapd页面回收中会用到
-	long lowmem_reserved[];             	//zone中预留的内存
-	struct pglist_data *zone_pgdat;     	//执行所属的pglist_data
-	struct per_cpu_pageset *pageset;  		// 888 Per-CPU上的页面，减少自旋锁的争用
+	unsigned long _watermark[NR_WMARK];      //水位值，WMARK_MIN/WMARK_LOV/WMARK_HIGH，页面分配器和kswapd页面回收中会用到
+	unsigned long watermark_boost;
+
+	unsigned long nr_reserved_highatomic	//如果没有定义ALLOC_HARDER或ALLOC_OOM,zone剩余内存需要减去这部分再去和水位比较
+	long lowmem_reserved[MAX_NR_ZONES];     //zone中预留的内存
+
+	struct pglist_data *zone_pgdat;     	//执行所属的 pglist_data
+	struct per_cpu_pageset __percpu *pageset;  		// 888 Per-CPU上的页面，减少自旋锁的争用
+	
+	unsigned long		*pageblock_flags;
 
 	unsigned long zone_start_pfn;       	//ZONE的起始内存页面帧号
-	unsigned long managed_pages;    		//present_pages的基础上，减去改zone中struct page所使用的，减去dma_reserve，剩余可以用来真正管理分配给其他人的内存页数  (被Buddy System管理的页面数量，present_pages-memmap_pages-dma_reserve的内存)；后续mm_init(),会重新统计，整体内存减去所有reserved的内存
+	unsigned long managed_pages;    		//present_pages 的基础上，减去改zone中struct page所使用的，减去dma_reserve，剩余可以用来真正管理分配给其他人的内存页数  (被Buddy System管理的页面数量，present_pages-memmap_pages-dma_reserve的内存)；后续mm_init(),会重新统计，整体内存减去所有reserved的内存
 	unsigned long spanned_pages;     		//ZONE中总共的页面数，包含空洞的区域
 	unsigned long present_pages;      		//ZONE里实际管理的页面数量，不是去掉已经被使用，是去掉空洞区域的
 
 	struct free_area free_area[MAX_ORDER];  // 888 管理空闲页面的列表
+	...
+	atomic_long_t		vm_stat[NR_VM_ZONE_STAT_ITEMS];		//统计该zone空闲内存页数
+
+内核会为每个zone设置水位信息
 
 struct per_cpu_pageset {
 	struct per_cpu_pages pcp;
 	...
+	s8 stat_threshold;
+	s8 vm_stat_diff[NR_VM_ZONE_STAT_ITEMS];	//释放的叶数量先统计到 pcp->vm_stat_diff 对应的数组中，当达到pcp->stat_threshold 时再一起给到zone->vm_stat 和 vm_zone_stat 中(多核情况下释放的数量每次都直接统计到全局变量中容易发生cache颠簸，所以先用per内存缓存下)
 };
 
 struct per_cpu_pages {
@@ -350,9 +390,22 @@ struct free_area {
 
 该系统有1024个struct mem_section结构体指针，因为是1G内存，所以第一个指针有指向具体的内存，指向有256个该结构体数组的内存；256个中的第一个数组管理这这1G的内存
 struct mem_section {
-	unsigned long section_mem_map;
-	unsigned long *pageblock_flags;
+	unsigned long section_mem_map;				//表明这1G内存的状态，具体查看4.8.1.section_mem_map.jpg
+	unsigned long *pageblock_flags;				//记录内存的可移动类型，256个页为一个block，
 };
 
 
 
+              +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ slub         | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | | |
+              +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+                                            
+ page         |   |   |   |   |   |   |   |   |   |   |   |   |   |   |   |   |                                            
+              +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+ page_block   |256个页 |       |       |       |       |       |       |       |
+              +-------+-------+-------+-------+-------+-------+-------+-------+
+ mem_section  |       1G      |               |               |               |
+              +---------------+---------------+---------------+---------------+
+ memory_block |                               |                               |  ？？？
+              +-------------------------------+-------------------------------+
+ memblock     |                                                               |
+              +---------------------------------------------------------------+

@@ -55,13 +55,27 @@ int main(int argc, char **argv)
 	}	
 	printf("read: %s\n", readbuf);
 	
-	
+	/*
+	start起始地址，一般默认为NULL即可(start值则是函数返回内核选择的虚拟地址)
+	length 映射长度，映射文件时一般设为文件长度
+	prot 内存区域权限，读、写、执行等
+	flags 做映射时的其他辅助标记
+		MAP_FIXED：配合addr使用
+		MAP_HUGETLB：用于从hugepage pool中申请大页
+		MAP_ANONYMOUS：匿名映射，映射的区域将被初始化为0
+		MAP_SHARED：共享映射。对被映射文件的写操作会写回(sync)源文件
+		MAP_PRIVATE：私有映射。对被映射文件的写不会写到源文件，而是触发cow机制重新分配内存写入。(这样的话，修改就不会被其他进程看到了)
+		MAP_POPULATE：对于文件映射，在mmap时就会把文件内容预读到映射区(此特性只支持private)
+		MAP_LOCKED: 效果等同与mlock()，防止被映射的内存被交换到swap分区。同时，此flags还会使mmap阶段就产生缺页异常为mmap映射的地址分配物理内存。(MAP_LOCKED对应vma flags中的VM_LOCKED)
+	fd 文件描述符，非文件映射时设为-1
+	offset 偏移，映射文件时一般设为0
+	*/
 //	mmapbuf = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 //	printf("%p  mmap: \n", mmapbuf);
 //	for(i=0; i<10; i++)
 //		printf("0x%2x ", mmapbuf[i]);
 //	printf("\n");
-//	
+
 //	poll_fds.fd = fd;
 //	poll_fds.events = POLLIN;
 //	

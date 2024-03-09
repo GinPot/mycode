@@ -151,7 +151,7 @@ arm64_memblock_init();
 6、记录NUMA、pg_data_t、 mem_section、page占用的内存，及内存和VMEMMAP_START虚拟建立页表占用的内存；
 7、保存内存信息resource结构体占用的内存；
 8、保存cmdline占用的内存；
-9、per_cpu先关占用的内存；
+9、per_cpu相关占用的内存；
 
 
 cat /sys/kernel/debug/memblock/reserved

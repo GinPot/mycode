@@ -6,12 +6,12 @@ enum {
 	MAX_ZONELISTS
 }
 
-ZONELIST_FALLBACK： 保存了所有zone的信息,后续申请内存时从_zonerefs依次取出zone尝试分配内存(如本NUMA节点无法分配就从其他节点分配)；
-	1，根据当前NUMA节点为中心，将其他NUMA节点排序，由近到远保存在node_order[]数组中
-	2，依次从node_order[]节点取出NUMA节点中的zone，从高到低保存到 pgdat->node_zonelists[ZONELIST_FALLBACK]._zonerefs；(ZONE_NORMAL>ZONE_DMA32)
+ZONELIST_FALLBACK： 保存了所有zone的信息,后续申请内存时从 _zonerefs 依次取出zone尝试分配内存(如本NUMA节点无法分配就从其他节点分配)；
+	1，根据当前NUMA节点为中心，将其他NUMA节点排序，由近到远保存在 node_order[]数组中
+	2，依次从 node_order[]节点取出NUMA节点中的zone，从高到低保存到 pgdat->node_zonelists[ZONELIST_FALLBACK]._zonerefs；(ZONE_NORMAL>ZONE_DMA32)
 
 ZONELIST_NOFALLBACK： 若收到 __GFP_THISNODE 标志则只会从ZONELIST_NOFALLBACK对应的zone列表中获取zone进行分配
-	1，只把本NUMA节点的zone从高到低保存到_zonerefs; 
+	1，只把本NUMA节点的zone从高到低保存到 _zonerefs; 
 
 
 policy_zone 保存这最优先分配的zone
@@ -34,10 +34,10 @@ struct zoneref {
 };
 
 struct zonelist {
-	struct zoneref _zonerefs[MAX_ZONES_PER_ZONELIST + 1];
+	struct zoneref _zonerefs[MAX_ZONES_PER_ZONELIST + 1];		//zone优先级数组
 };
 
-typedef struct pglist_data {
+typedef struct pglist_data {				//在NUMA架构下，每一个Node都会对应一个struct pglist_data，
 	...
 	struct zonelist node_zonelists[MAX_ZONELISTS];
 	...
@@ -56,7 +56,7 @@ build_all_zonelists()																			//主要是为各个NUMA节点中的各�
 					build_zonelists(pgdat)
 						while ((node = find_next_best_node(local_node, &used_mask)) >= 0)
 							...
-							node_order[nr_nodes++] = node										//以当前NUMA节点为中心，将其他NUMA节点排序，由近到远保存在node_order[]数组中
+							node_order[nr_nodes++] = node										//以当前NUMA节点为中心，将其他NUMA节点排序，由近到远保存在 node_order[]数组中
 						build_zonelists_in_node_order(pgdat, node_order, nr_nodes)
 							zonerefs = pgdat->node_zonelists[ZONELIST_FALLBACK]._zonerefs;
 							for (i = 0; i < nr_nodes; i++)										//由近到远取出NUMA节点

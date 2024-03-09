@@ -1,5 +1,5 @@
 1、boot cpu的task_struct结构体在init\init_task.c中静态创建，在汇编阶段就会把栈、task_struct等信息设置到对应cpu寄存器中；
-2、其他cpu则是在startup之前有boot cpu创建idle线程作为改cpu的第一个线程；
+2、其他cpu则是在startup之前由boot cpu创建idle线程作为该cpu的第一个线程；
 
 3、boot cpu init_mm(mm_struct)的页表信息先用init_pg_dir和idmap_pg_dir做mmu使能的平滑切换，后面在 setup_arch()会切到使用 swapper_pg_dir；
 4、其他cpu在汇编阶段直接用swapper_pg_dir和idmap_pg_dir使能mmu，进入C语言阶段直接把idle线程的active_mm指向 init_mm(内核进程的内存信息都是使用init_mm结构体中的信息)；

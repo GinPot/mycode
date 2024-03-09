@@ -4,11 +4,11 @@
 1、没有WQ_UNBOUND则说明是per cpu，哪个cpu上schedule的work便会运行在哪个cpu上；
 2、设置了WQ_UNBOUND将有unbound thread pool处理，调度work由系统的调度器模块来决定在哪个核上运行；
 3、CMWQ 的精髓就在 worker_pool 里面 worker 的动态增减管理上 manage_workers()
-4、CPU 创建两个 normal worker_pool：一个 normal 优先级 (nice=0)、一个高优先级 (nice=HIGHPRI_NICE_LEVEL)，对应创建出来的 worker 的进程 nice 不一样
+4、CPU 创建两个 normal worker_pool：一个 normal 优先级 (nice=0)、一个高优先级 (nice=HIGHPRI_NICE_LEVEL)，对应创建出来的 worker 的进程 nice 不一样;每个worker_pool默认会创建一个worker线程;
 
 workqueue work 相关的数据结构概念：
-	work ：工作。
-	workqueue ：工作的集合。		per cpu类型的workqueue 和 pwq 是一对多的关系，即workqueue对应多个pwq(都是该workqueue申请的pwqs,每个cpu一个)；WQ_ORDERED类型的workqueue只有一个pwq，否则部分限制work是按照顺序执行
+	work ：工作；一般驱动都是创建work
+	workqueue ：工作的集合。		per cpu类型的workqueue 和 pwq 是一对多的关系，即workqueue对应多个pwq(都是该workqueue申请的pwqs,每个cpu一个)；WQ_ORDERED类型的workqueue只有一个pwq，否则部分限制work是按照顺序执行；驱动有优先级或者执行cpu要求的情况下创建工作集
 	worker_pool：工人的集合。		per cpu类型的pwq 和 worker_pool 是一对一的关系；UNBOUND类型如果属性相同可能多个pool_workqueue对应一个worker_pool
 	worker ：工人。在代码中 worker 对应一个 work_thread() 内核线程。
 	pwq(pool_workqueue)：中间人/中介，负责建立起 workqueue 和 worker_pool 之间的关系。workqueue 和 pwq 是一对多的关系，pwq 和 worker_pool 是一对一的关系
@@ -21,7 +21,7 @@ kworker/cpu：worker id
 
 ==============================================================================================================
 
-CMWQ： Concurrency Managed Workqueue
+CMWQ： Concurrency Managed Workqueue,并发管理工作队列
 
 工作队列存在的问题：
 	(1)过多的创建内核线程
@@ -148,7 +148,7 @@ start_kernel()
 
 queue_work(WorkQueueTest, &test_workqueue)
 	queue_work_on(WORK_CPU_UNBOUND, wq, work)
-		if (!test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work)))								//确认该work是出事pending，还是处于正在处理
+		if (!test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work)))								//确认该work是处于pending，还是处于正在处理
 			__queue_work(cpu, wq, work)
 				if (unlikely(wq->flags & __WQ_DRAINING) && WARN_ON_ONCE(!is_chained_work(wq)))				//如果正在销毁这个workqueue,除了已经处于本workqueue的work，其他的都直接返回
 					return；

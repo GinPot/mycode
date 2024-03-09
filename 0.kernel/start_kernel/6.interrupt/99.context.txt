@@ -13,7 +13,7 @@
 		raw_local_irq_restore(flags)
 			arch_local_irq_restore(flags)
 	
-2、禁止软中断：			//线程上下文调用时也可以看出进入软件中断上下文
+2、禁止软中断：				//线程上下文调用时也可以看出进入软件中断上下文
 	local_bh_disable()
 	local_bh_enable()
 

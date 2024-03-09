@@ -1,8 +1,23 @@
+伙伴系统
+	申请
+	释放
+	回收机制
+	水位初始化		__setup_per_zone_wmarks()?
+
+slub
+
+API
+
+=================================================================================================
+
+
 
 0、主要将memblock管理的内存空间释放到伙伴系统中
 	1、加入是看内存大小，尽可能放到10阶对应的空闲链表上，不足时才一次挂到较小的位阶链表上；
-	2、位阶为0，即1页框内存先放入高速缓存链表(per-cpu)(zone->pageset->pcp->lists)中，并设置热页：刚释放的内存可能cache中还有缓存，当有其他进程申请单页框是，有限把热页分配出去，提高cache命中率；位阶大于0的则直接放回伙伴系统且设置为冷页
-	3、释放到空闲链表之前后检查同阶是否有内存是否有空闲，有的话合并如高阶内存再检测，最后再加入到空闲链表中
+	2、位阶为0，即1页框内存先放入高速缓存链表(per-cpu)(zone->pageset->pcp->lists)中，并设置热页：刚释放的内存可能cache中还有缓存，当有其他进程申请单页框是，优先把热页分配出去，提高cache命中率；位阶大于0的则直接放回伙伴系统且设置为冷页
+		当pcp->count >= pcp->high时再将pcp中的页放入到伙伴系统中
+	3、释放到空闲链表之后检查同阶同移动类型是否有内存是否有空闲，有的话合并入高阶内存再检测，最后再加入到空闲链表中
+	4、释放时，先确定位阶，再确定迁移类型，最后加入到对应的链表中
 
 放入伙伴系统前的准备:
 	1、将所有reserved内存都保留设为G_reserved不进入此伙伴系统；
@@ -20,15 +35,18 @@ swiotlb:
 	这样保证了cpu和dma看到数据的一致性，但效率低，因避免使用
 
 
+
+
 ================================================================================================================================================
 pageblock_order=9
-MAX_ORDER=11
+MAX_ORDER=11				最大阶是2^10个4K大小
 
 continue_merging: 		0~8
 
 max_order < MAX_ORDER	9~10
 order < MAX_ORDER-2		0~8
 
+释放内存到伙伴系统中
 
 mm_init()
 	page_ext_init_flatmem()														//参考4.setup_arch(memory)->4.8.0.bootmem_init(Sparse_memory).txt中的3中内存模型，一般采用sparse memory model，所以此函数为空
@@ -56,7 +74,7 @@ mm_init()
 					count += __free_memory_core(start, end)												//将未使用的内存释放到伙伴系统中
 						__free_pages_memory(start_pfn, end_pfn)
 							...
-							while (start < end)															// 888 最大位阶值依次计算
+							while (start < end)															// 888 最大位阶值依次计算，最大为2^10个页循环加入到伙伴系统中
 								order = min(MAX_ORDER - 1UL, __ffs(start))								//取这段内存起始地址的数值的最大位阶,__ffs(start)取start整数中第一个bit为1的位是第几位
 								while (start + (1UL << order) > end)
 									order--																//计算这段内存size对应的位阶
@@ -65,7 +83,7 @@ mm_init()
 										prefetchw(p)													//写预取; prefetch()用于读预取
 										for (loop = 0; loop < (nr_pages - 1); loop++, p++)				// 888 一页页循环初始化page状态
 											prefetchw(p + 1);
-											__ClearPageReserved(p);										//清楚page->flag中的PG_reserved位设置为0
+											__ClearPageReserved(p);										//清除page->flag中的PG_reserved位设置为0
 											set_page_count(p, 0);										//将page的引用计数设置为0， page->_refcount = 0
 										...
 										atomic_long_add(nr_pages, &page_zone(page)->managed_pages)		// 前面把这个参数初始化为0了，现在需要重新统计；这次减去了所有reserved的页框
@@ -104,7 +122,11 @@ mm_init()
 																max_order = min_t(unsigned int, MAX_ORDER, pageblock_order + 1)				//没有大页的情况下MAX_ORDER=pageblock_order+1，但有大页情况下可能就不一样
 																...
 																if (likely(!is_migrate_isolate(migratetype)))
-																	__mod_zone_freepage_state(zone, 1 << order, migratetype)				// 888 将非MIGRATE_ISOLATE移动类似的内存都统计到vm_zone_stat[NR_FREE_PAGES]全局数组中，后续从中获取空闲内存的size
+																	__mod_zone_freepage_state(zone, 1 << order, migratetype)				// 888 将非MIGRATE_ISOLATE移动类似的内存都统计到 zone->vm_stat[NR_FREE_PAGES]和 vm_zone_stat[NR_FREE_PAGES(888)]全局数组中，后续从中获取空闲内存的size
+																		__mod_zone_page_state(zone, NR_FREE_PAGES, nr_pages);
+																			...																// 释放的叶数量先统计到 pcp->vm_stat_diff 对应的数组中，当达到pcp->stat_threshold 时再一起给到zone->vm_stat和vm_zone_stat中(多核情况下释放的数量每次都直接统计到全局变量中容易发生cache颠簸，所以先用per内存缓存下)
+																		if (is_migrate_cma(migratetype))									//若内存迁移类型是CMA，也统计到NR_FREE_CMA_PAGES数组中
+																			__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, nr_pages);
 																...																			//一些列内存检查
 																while (order < max_order - 1)
 																	...
@@ -122,25 +144,382 @@ mm_init()
 																	if (migratetype != buddy_mt && (is_migrate_isolate(migratetype) || is_migrate_isolate(buddy_mt))) 	//即合并高阶内存时，若其中有一个是MIGRATE_ISOLATE迁移类型的内存块，则不合并直接加入伙伴系统
 																	
 																	...																									//若迁移类型相同，则调回上面while继续合并
+																set_page_order(page, order)
+																	set_page_private(page, order);											//设置page->Private等于位阶数
+																	__SetPageBuddy(page);													//设置伙伴标志位，表示属于伙伴系统管理了
 																if ((order < MAX_ORDER-2) && pfn_valid_within(buddy_pfn) && !is_shuffle_order(order))
 																	...
 																	buddy_pfn = __find_buddy_pfn(combined_pfn, order + 1);												//上面while已经把所有可以合并的阶位合并了，这里再次检查更高阶未是否满足合并要求，
 																	if (pfn_valid_within(buddy_pfn) && page_is_buddy(higher_page, higher_buddy, order + 1))
 																		dd_to_free_area_tail(page, &zone->free_area[order], migratetype)								//若发现更高阶满足要求，则把这块内存放到空闲链表末尾，这样可以避免马上又被分配出去，提高和高阶合并的可能性
 																add_to_free_area(page, &zone->free_area[order], migratetype)
-																	list_add(&page->lru, &area->free_list[migratetype])						//添加到对应位阶，对应迁移类型的链表中
+																	list_add(&page->lru, &area->free_list[migratetype])						//添加到对应位阶，对应迁移类型的链表中，最后加入链表的也将最先分配出去
 																	area->nr_free++
 					return count																											//返回总共把多少内存加入到了伙伴系统
-				totalram_pages_add(pages)																									//将总共的size设置到_totalram_pages全局变量中
+				totalram_pages_add(pages)																									//将总共的size设置到 _totalram_pages 全局变量中
 		mem_init_print_info(NULL)																											//打印系统内存情况
 			pr_info("Memory: %luK/%luK available (%luK kernel code, %luK rwdata, %luK rodata, %luK init, %luK bss, %luK reserved, %luK cma-reserved"
 					"%s%s)\n",
-					nr_free_pages() << (PAGE_SHIFT - 10),																					//空闲内存从vm_zone_stat[NR_FREE_PAGES]全局数组中获取
+					nr_free_pages() << (PAGE_SHIFT - 10),																					// 888 空闲内存从vm_zone_stat[NR_FREE_PAGES]全局数组中获取
 					physpages << (PAGE_SHIFT - 10),
 					codesize >> 10, datasize >> 10, rosize >> 10,
 					(init_data_size + init_code_size) >> 10, bss_size >> 10,
 					(physpages - totalram_pages() - totalcma_pages) << (PAGE_SHIFT - 10),													//reserved内存，通过用总的内存，减去伙伴系统统计的内存，再减去cma的内存得到
 					totalcma_pages << (PAGE_SHIFT - 10)
+
+
+系统总共的内存：			get_num_physpages() ==> pglist_data->node_present_pages			统计所有NUMA节点的内存
+伙伴系统管理的总共内存：	totalram_pages() ==> _totalram_pages							将memblock空闲的内存释放到伙伴系统时统计的大小
+伙伴系统系统剩余内存：		nr_free_pages() ==> global_zone_page_state(NR_FREE_PAGES)		全局数vm_zone_stat数组中获取伙伴系统剩余内存，包括所有NUMA节点和所有zone
+系统CMA内存：				？？？
+reserved内存：			get_num_physpages() - totalram_pages() - totalcma_pages
+
+=============================================================================================================================================
+#define HPAGE_SHIFT		PMD_SHIFT
+#define HUGETLB_PAGE_ORDER	(HPAGE_SHIFT - PAGE_SHIFT)
+#define pageblock_order		HUGETLB_PAGE_ORDER			21 - 12 = 9
+
+
+
+从伙伴系统中申请内存
+
+_alloc_pages_nodemask是伙伴系统的心脏，处理实质的内存分配工作。
+
+(1)先进行参数初始化:alloc_mask, alloc_flags 和struct alloc_context ac，用于决定内存块的分配配条件；
+	ac：				
+		根据gfp_mask确定
+			申请的NUMA节点
+			从哪个zone开始申请，在NUMA节点中用哪个zonelist申请
+			申请内存的迁移类型；
+	alloc_flags：	
+		内存申请的一些行为： 
+			对应zone的水位需要达到什么水平才能分配
+			根据gfp_mask确定从gfp_mask确定是否可以从CMA中申请内存
+			是否可以在其他NUMA节点申请内存
+			根据gfp_mask确定是否唤醒NUMA节点中的Kswapd进程，进行异步内存回收
+	alloc_mask：
+		？？？
+
+(2) get_page_from_freelist:内核内存环境良好，直接进行快速分配，若成功返回获取free内存块
+	0、按照 high_zoneidx，zonelist来寻找空闲内存；
+	1、以ALLOC_WMARK_LOW水位来判断zone内存是否充足；
+		1.1、该zone空闲内存-申请内存-水位线-CMA内存
+		1.2、水位线也受ALLOC_HARDER，ALLOC_OOM，ALLOC_HIGH几个参数的影响
+		1.3、若设置了ALLOC_HARDER或ALLOC_OOM，若其他迁移类型没有空闲页时，可以使用 MIGRATE_HIGHATOMIC 类型迁移页
+	2、不充足的情况会进行快速内存回收，再进行水位的判断；
+	4、快速申请内存；
+		5.1、申请0阶内存时，有限从PCP高速缓存链表中分配；PCP链表中没有空闲页时会先从伙伴系统中申请pcp->batch大小的内存再分配
+		5.2、若大于0阶，并设置了ALLOC_HARDER，则优选从MIGRATE_HIGHATOMIC 迁移类型申请页；没有设置的话就伙伴系统中申请就按照：1，指定迁移类型申请；2，CMA内存申请；3，备用类型中申请
+			5.2.1、若获取的是高阶内存，则先拆分，将拆分后的内存放回伙伴系统，留下靠前的内存分配出去
+			5.2.2、从备用类型中申请后，需要把申请后的内存移动到指定类型的链表中，数量达到pageblock时也需要设置对应的pageblock_flags
+	5、若设置了 ALLOC_NOFRAGMENT，重新走一次申请流程
+
+(3)__alloc_pages_slowpath:当前内存环境恶劣时，进入慢分配流程，若成功返回free内存块
+	1、以ALLOC_WMARK_MIN水位线来判断zone内存是否充足，并设置些更激进的内存分配方式，同时也会唤醒内核的swap线程，然后先直接调用 get_page_from_freelist 接口尝试分配内存
+	2、失败的情况下第一次内存碎片整理后，激进的调整zonelist或者flags，再次申请内存；
+	3、失败的情况下若设置了__GFP_DIRECT_RECLAIM，进行第一次内存回收，再次申请内存；
+	4、失败的情况下第二次进行内存碎片整理后再次申请
+	5、若设置了__GFP_NORETRY，或 没有设置 __GFP_RETRY_MAYFAIL 重试标志，且位阶大于3； 以上都失败的就直接退出
+	6、检测是否需要重新内存回收，若需要的话，从(2)后半句重新开始
+	7、检测是否需要重新整理内存碎片，若需要的话，从(2)后半句重新开始
+	8、还是失败的话，最后用OOM杀进程再申请内存；
+	9、若设置了__GFP_NOFAIL和__GFP_DIRECT_RECLAIM标志，先使用标志位ALLOC_CPUSET尝试分配，失败再使用ALLOC_HARDER尝试分配；失败的话调度出去，等下次调度运行的时候retry从(2)后半句重新开
+
+(4)获取空间内存块后对内存块和系统环境做检查，满足预定要求则返回申请的内存给内核使用
+
+
+page = __alloc_pages_node(node, flags, order)
+	__alloc_pages(gfp_mask, order, nid)
+		__alloc_pages_nodemask(gfp_mask, order, preferred_nid, NULL)
+			unsigned int alloc_flags = ALLOC_WMARK_LOW;
+			...
+			prepare_alloc_pages(gfp_mask, order, preferred_nid, nodemask, &ac, &alloc_mask, &alloc_flags)
+				ac->high_zoneidx = gfp_zone(gfp_mask)										//gfp_zone()将传入的gfp_mask掩码转换为物理内存区域zone，返回这个物理内存区域是内存可分配区域的最高级内存区域，如果最高级内存区域不足以满足内存分配需求，则按照ZONE_HIGHMEM -> ZONE_NORMAL -> ZONE_DMA 的顺序依次降级
+				ac->zonelist = node_zonelist(preferred_nid, gfp_mask)						//NUMA的node找到对应的node_zonelists，再从gfp_mask中确认是用ZONELIST_FALLBACK还是ZONELIST_NOFALLBACK数组里的_zonerefs数组(该数组从近到远的顺序排列了zone的信息)
+				ac->nodemask = nodemask														//为null？
+				ac->migratetype = gfpflags_to_migratetype(gfp_mask)							//根据gfp找到迁移类型,gfp_flags的bit3-bit4表示migrate类型
+				...
+				if (IS_ENABLED(CONFIG_CMA) && ac->migratetype == MIGRATE_MOVABLE)			//若使能CMA，且迁移类型是可移动的，会自动设置CMA flag
+					*alloc_flags |= ALLOC_CMA;
+			finalise_ac(gfp_mask, &ac)
+				ac->spread_dirty_pages = (gfp_mask & __GFP_WRITE)							//确认是否有设置 __GFP_WRITE，主要用于文件系统缓存
+				ac->preferred_zoneref = first_zones_zonelist(ac->zonelist, ac->high_zoneidx, ac->nodemask)					//用于根据 nodemask，找到合适的不大于 high_zoneidx 的内存管理区preferred_zone
+			...
+			/************************************以上是准备工作，下面是快速内存分配************************************/
+			page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac)				//快速内存分配
+retry:
+				z = ac->preferred_zoneref
+				for_next_zone_zonelist_nodemask(zone, z, ac->zonelist, ac->high_zoneidx, ac->nodemask)						//遍历zonelist列表中有的zone
+					if (cpusets_enabled() && (alloc_flags & ALLOC_CPUSET) && !__cpuset_zone_allowed(zone, gfp_mask))		//如果使能cpuset而且设置了ALLOC_CPUSET标志就检查看线程是否允许在当前CPU内存域zone所在结点中分配内存
+						continue
+					if (ac->spread_dirty_pages)												//若设置 __GFP_WRITE 标志
+						if (last_pgdat_dirty_limit == zone->zone_pgdat)						//需要检查当前zone的脏页是否超标，超标就跳过这个zone，check下个zone
+							continue;
+
+						if (!node_dirty_ok(zone->zone_pgdat)) {								//检测zone脏页是否超过限制
+							last_pgdat_dirty_limit = zone->zone_pgdat;
+							continue;
+						}
+						if (no_fallback && nr_online_nodes > 1 && zone != ac->preferred_zoneref->zone)			//在多NUMA的node情况下，若当前循环的zone所属的NUMA_id不等于，根据nodemask找到的zone所属的NUMA_id，则 retry
+							...
+					mark = wmark_pages(zone, alloc_flags & ALLOC_WMARK_MASK);				//获取该zone的水位信息，但slub初始化过程中该水位信息_watermark，watermark_boost都为0；需要等到__define_initcall(fn, 1)阶段才会初始化水位信息？
+					if (!zone_watermark_fast(zone, order, mark, ac_classzone_idx(ac), alloc_flags)) {			//返回true的话直接进入快速内存分配，若是flase则空闲页在WMARK_LOW水位之下，或者在各阶，各迁移类型中都没有空闲阶，则需要进行内存回收
+									free_pages = zone_page_state(z, NR_FREE_PAGES)								//获取该zone剩余内存
+									if (!(alloc_flags & ALLOC_CMA))												//若不支持申请cma将减去这部分大小
+										cma_pages = zone_page_state(z, NR_FREE_CMA_PAGES);
+									if (!order && (free_pages - cma_pages) > mark + z->lowmem_reserve[classzone_idx])		//申请内存大小是0阶，且剩余内存 > (水位内存+lowmem_reserve)
+										true																				//则可进入快速申请
+									__zone_watermark_ok(z, order, mark, classzone_idx, alloc_flags, free_pages)
+										...																					//根据ALLOC_xxxx表示计算使用的水位线；计算该zone空闲内存-申请内存-水位线-CMA内存
+										if (free_pages <= min + z->lowmem_reserve[classzone_idx])							//得到的空闲内存大于水位+lowmem_reserve，则继续往下走
+											false
+										if (!order)
+											true																			//申请zise是0阶的快直接退出，进入快速内存分配
+										for (o = order; o < MAX_ORDER; o++) {												//循环改zone里面从低阶到高阶，每阶的空闲链表
+											struct free_area *area = &z->free_area[o];
+												if(!area->nr_free)															//改阶空闲链表没有空闲阶，返回向更高阶查询
+													continue
+												for (mt = 0; mt < MIGRATE_PCPTYPES; mt++) 									//循环迁移类型中找，刚开始默认都是MIGRATE_MOVABLE类型
+													if (!free_area_empty(area, mt))											//所以一般在MIGRATE_MOVABLE类型时返回true
+														return true;
+												if ((alloc_flags & ALLOC_CMA) && !free_area_empty(area, MIGRATE_CMA))		//若设置了CMA标志，且有空闲阶，返回true
+													return true;
+												if (alloc_harder && !list_empty(&area->free_list[MIGRATE_HIGHATOMIC]))		//如果设置了ALLOC_HARDER或ALLOC_OOM，且MIGRATE_HIGHATOMIC类型中有空闲阶，返回true
+													return true;
+										}
+										return false
+						...
+						if (alloc_flags & ALLOC_NO_WATERMARKS)								//不考虑水位线，直接进行内存快速分配
+							goto try_this_zone;
+						if (node_reclaim_mode == 0 || !zone_allows_reclaim(ac->preferred_zoneref->zone, zone))				//系统node_reclaim_mode参数默认为0，所以主要看后面这个函数；若设置为1时则开启对所有zone的内存回收
+							continue;																						//若设置0，则判断当前zone对应的numa id与preferred_zoneref对应zone的numa id小于RECLAIM_DISTANCE才对该zone进行内存回收
+						ret = node_reclaim(zone->zone_pgdat, gfp_mask, order)												//快速内存回收，1、只对不达标的zone进行回收；2、不能进行unmap(不能释放映射页)、writeback(不能释放脏页活匿名页)操作，避免回收太耗时
+						switch (ret) {
+							case NODE_RECLAIM_NOSCAN:																		//设置了禁止扫描的标志？(没有达到内存回收要求？)，循环下个zone
+							continue;
+							case NODE_RECLAIM_FULL:																			//没有可回收页，循环下个zone
+							ontinue;
+							default:
+								if (zone_watermark_ok(zone, order, mark, ac_classzone_idx(ac), alloc_flags))				//回收了部分也，再次检查是否满足手印限制，满足进行快速内存分配，不满足循环下个zone
+									goto try_this_zone;
+								continue;	
+try_this_zone：
+					page = rmqueue(ac->preferred_zoneref->zone, zone, order, gfp_mask, alloc_flags, ac->migratetype)
+						if (likely(order == 0)) 																			//申请内存大小为0阶时，用高速缓存pcp链表分配
+							page = rmqueue_pcplist(preferred_zone, zone, gfp_flags, migratetype, alloc_flags)
+								local_irq_save(flags)																		//禁止本cpu中断并保存中断状态，防止在这过程中处理中断，中断中又申请内存导致下面逻辑异常
+								pcp = &this_cpu_ptr(zone->pageset)->pcp
+								list = &pcp->lists[migratetype]
+								page = __rmqueue_pcplist(zone,  migratetype, alloc_flags, pcp, list)
+									if (list_empty(list))																	//若高速缓存pcp空闲链表为空，则从伙伴系统中申请size为pcp->batch的内存
+										pcp->count += rmqueue_bulk(zone, 0, pcp->batch, list, migratetype, alloc_flags)		//从伙伴系统获取也填充到高速缓存中
+											for (i = 0; i < count; ++i)														//循环pcp->batch次获取
+												struct page *page = __rmqueue(zone, order, migratetype, alloc_flags)		//从伙伴系统中申请内存
+																																1、通过 __rmqueue_smallest 函数在指定的migratetype类型链表上进行扫描分配内存，成功则返回page
+																																2、上面申请失败，申请的迁移类型是MIGRATE_MOVABLE，则通过 __rmqueue_smallest 函数在 MIGRATE_CMA 迁移类型链表中申请内存
+																																3、上面申请失败，在通过__rmqueue_fallback函数，按照fallbacks[MIRGRATE_TYPES][MIGRATE_TYPES-1]数组顺序查找备用迁移类型再分配
+													page = __rmqueue_smallest(zone, order, migratetype)								// 888
+														for (current_order = order; current_order < MAX_ORDER; ++current_order)		//从指定阶到最大阶遍历链表，直到找到一个可以分配的链表
+															area = &(zone->free_area[current_order]);								//找到该阶对应的空闲页面链表
+															page = get_page_from_free_area(area, migratetype)						//搜索该阶空闲链表中是否有指定迁移类型的空闲页块，没有就搜索下一阶链表
+															if (!page)
+																continue;
+															del_page_from_free_area(page, area)
+																list_del(&page->lru)												//从对应位阶，对应迁移类型的空闲页表free_list中删除该页
+																__ClearPageBuddy(page)												//将伙伴标志位清0，表示改业不属于伙伴系统了
+																set_page_private(page, 0)											//将page->Private标志清0
+																area->nr_free--														//当前阶的空闲计数减1
+															expand(zone, page, order, current_order, area, migratetype)				//若获取的是高阶内存，则先拆分，将拆分后的内存放回伙伴系统，留下靠前的内存分配出去
+															set_pcppage_migratetype(page, migratetype)								//将分配出去的页，设置为申请对应的迁移类型
+													if (unlikely(!page)) 
+														if (migratetype == MIGRATE_MOVABLE)
+															page = __rmqueue_cma_fallback(zone, order)								// 888
+																__rmqueue_smallest(zone, order, MIGRATE_CMA)						//上面没有申请到内存的话就通过 __rmqueue_smallest 函数在 MIGRATE_CMA 迁移类型链表中申请内存
+													if (!page && __rmqueue_fallback(zone, order, migratetype, alloc_flags))			// 888
+														for (current_order = MAX_ORDER - 1; current_order >= min_order; --current_order)		//从高阶开始搜索
+															area = &(zone->free_area[current_order])											//获取当前阶的free_area
+															fallback_mt = find_suitable_fallback(area, current_order, start_migratetype, false, &can_steal)
+																if (area->nr_free == 0)															//若改位阶没有空闲的页，则直接返回-1
+																	return -1
+																*can_steal = false																///???
+																for (i = 0;; i++)
+																	fallback_mt = fallbacks[migratetype][i]
+																	if (fallback_mt == MIGRATE_TYPES)											//结束标志则直接退出
+																		break
+																	if (free_area_empty(area, fallback_mt))										//若该迁移类型的free_list为空，则循环下个迁移类型
+																		continue
+																	if (can_steal_fallback(order, migratetype))
+																				if (order >= pageblock_order)									//如果位阶大于等于9
+																					return true;
+																				if (order >= pageblock_order / 2 ||								//如大于等于4
+																					start_mt == MIGRATE_RECLAIMABLE ||							//或移动类型是可回收时
+																					start_mt == MIGRATE_UNMOVABLE ||							//或移动类型不能移动
+																					page_group_by_mobility_disabled)							// 一般page_group_by_mobility_disabled为0，见5.zonelist.txt
+																					return true;
+																		*can_steal = true
+																	if (!only_stealable)
+																		return fallback_mt														//默认从这退出，返回可用的迁移类型
+																	if (*can_steal)
+																		return fallback_mt
+															if (!can_steal && start_migratetype == MIGRATE_MOVABLE && current_order > order)	// can_steal 参数和后续判断，是否要从低阶重新开始搜索
+																goto find_smallest
+find_smallest:
+	若从高阶搜索的的迁移类型判断结果都是不可窃取，那么从低阶重新搜索一遍
+														for (current_order = order; current_order < MAX_ORDER; current_order++)
+															area = &(zone->free_area[current_order])
+															fallback_mt = find_suitable_fallback(area, current_order, start_migratetype, false, &can_steal)
+do_steal:
+	1、从高阶搜索时，位阶 > (巨页/2)表示可窃取
+	2、备用类型为可回收或者不可移动时表示可窃取
+														page = get_page_from_free_area(area, fallback_mt)										//取备用迁移类型链表的内存
+														steal_suitable_fallback(zone, page, alloc_flags, start_migratetype, can_steal)			//将备用迁移类型转换为目标迁移类型
+															...																					// 若获取的备用迁移类型的页是 MIGRATE_HIGHATOMIC 则不进行转换
+															if (current_order >= pageblock_order)												//若位阶大于9，则把pageblock都更改迁移类型
+																change_pageblock_range(page, current_order, start_type)
+																goto single_page																//再修改单页链表
+															boost_watermark(zone)																// ？？？
+																if (alloc_flags & ALLOC_KSWAPD)
+																	set_bit(ZONE_BOOSTED_WATERMARK, &zone->flags)
+															if (!whole_block)																	//不允许从整个pageblock中窃取
+																goto single_page;
+															free_pages = move_freepages_block(zone, page, start_type, &movable_pages)			//将空闲的页面迁移到目标类型
+															if (!free_pages)																	//移动失败的话就移动单独页
+																goto single_page
+															if (free_pages + alike_pages >= (1 << (pageblock_order-1)) || page_group_by_mobility_disabled)			//移动页数量+可移动页的数量 > 9 时，设置整个pageblock迁移类型
+																set_pageblock_migratetype(page, start_type)
+															return
+single_page:
+															area = &zone->free_area[current_order];
+															move_to_free_area(page, area, start_type);
+												...																								//检测从伙伴系统中申请页的合法性
+												list_add_tail(&page->lru, list)																	//将页放入到pcp高速缓存链表中
+												if (is_migrate_cma(get_pcppage_migratetype(page)))
+													__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -(1 << order))								//若申请的内存属于CMA，则更新zone->vm_stat[NR_FREE_CMA_PAGES]，vm_zone_stat[NR_FREE_CMA_PAGES] CMA剩余页数
+											__mod_zone_page_state(zone, NR_FREE_PAGES, -(i << order))											//更新zone->vm_stat[NR_FREE_PAGES]，vm_zone_stat[NR_FREE_PAGES] 剩余页数
+									...
+									page = list_first_entry(list, struct page, lru);															//从pcp高速缓存中取出一页
+									list_del(&page->lru);																						//从pcp高速缓存中删除这页
+									pcp->count--;																								//更新pcp高速缓存数量
+								if (page)																										//若从pcp高速缓存申请到了页，更新事件统计计数，debug（调试）用
+									__count_zid_vm_events(PGALLOC, page_zonenum(page), 1);
+									zone_statistics(preferred_zone, zone);
+							goto out;																											//申请0阶的高速缓存结束，下面进行0阶以上的申请
+						if (alloc_flags & ALLOC_HARDER)																							//若设置了 ALLOC_HARDER 标志位，则从 MIGRATE_HIGHATOMIC 迁移类型中申请内存
+							page = __rmqueue_smallest(zone, order, MIGRATE_HIGHATOMIC)
+						if (!page)																												//上面没有申请到内存的话，则从伙伴系统中按照：1，指定迁移类型申请；2，CMA内存申请；3，备用类型重视申请
+							page = __rmqueue(zone, order, migratetype, alloc_flags)
+						__mod_zone_freepage_state(zone, -(1 << order), get_pcppage_migratetype(page));											//更新 NR_FREE_PAGES 和 NR_FREE_CMA_PAGES 的zone->vm_stat[NR_FREE_PAGES]，vm_zone_stat[NR_FREE_PAGES] 剩余页数
+						__count_zid_vm_events(PGALLOC, page_zonenum(page), 1 << order);															// 更新事件统计计数，debug（调试）用
+						zone_statistics(preferred_zone, zone);
+					if (page)
+						prep_new_page(page, order, gfp_mask, alloc_flags)																		//清除相关标志或者设置联合页
+						if (unlikely(order && (alloc_flags & ALLOC_HARDER)))																	//alloc_flags的ALLOC_HARDER被设置，且*order != 0
+							reserve_highatomic_pageblock(page, zone, order)																		//尝试将该页加入到 MIGRATE_HIGHATOMIC 中(MIGRATE_HIGHATOMIC页面数量不能超过zone里面page的1/100)
+				if (no_fallback) {																												//若设置了 ALLOC_NOFRAGMENT，重新走一次申请流程
+					alloc_flags &= ~ALLOC_NOFRAGMENT;
+					goto retry;
+				}
+			if (likely(page))
+				goto out
+
+/************************************慢速内存分配************************************/
+
+			alloc_mask = current_gfp_context(gfp_mask)											//根据当前线程的flag，再次设置alloc_mask，主要是否需要清除 __GFP_IO，__GFP_FS，__GFP_MOVABLE标志
+			ac.spread_dirty_pages = false														//若之前设置了脏标志，现在清楚掉
+			if (unlikely(ac.nodemask != nodemask))												//若之前的操作改变了nodemask，还原回去
+				ac.nodemask = nodemask
+
+
+			page = __alloc_pages_slowpath(alloc_mask, order, &ac)				
+				...
+				alloc_flags = gfp_to_alloc_flags(gfp_mask)										//重新设置映射的一些标志位(保守内存分配转向为激进内存分配)
+					alloc_flags = ALLOC_WMARK_MIN | ALLOC_CPUSET								//设置水位为 ALLOC_WMARK_MIN
+					alloc_flags |= (__force int) (gfp_mask & __GFP_HIGH)
+					...
+				ac->preferred_zoneref = first_zones_zonelist(ac->zonelist, ac->high_zoneidx, ac->nodemask)			//用于根据 nodemask，重新找到合适的不大于 high_zoneidx 的内存管理区 preferred_zone
+				if (alloc_flags & ALLOC_KSWAPD)													//若设置了 __GFP_KSWAPD_RECLAIM(ALLOC_KSWAPD),唤醒交换线程
+					wake_all_kswapds(order, gfp_mask, ac)
+				page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac)					// 888 重新设置了 ALLOC_WMARK_MIN 水位后，可能就能成功申请内存
+				
+				if (can_direct_reclaim &&														//设置了 __GFP_DIRECT_RECLAIM 标志
+						(costly_order || (order > 0 && ac->migratetype != MIGRATE_MOVABLE))		//内存分配位阶>3,或者申请内存类型不是MIGRATE_MOVABLE： 低阶内存收碎片化影响较小，下面操作不能解决问题
+						&& !gfp_pfmemalloc_allowed(gfp_mask))									//本次内存分配不能无水线限制的内存分配
+					page = __alloc_pages_direct_compact(gfp_mask, order, alloc_flags, ac, INIT_COMPACT_PRIORITY, &compact_result)				// 888 进行内存碎片整理，在申请内存
+						if (!order)																//若是申请0阶走到这，说明是真没内存了，不是因为内存碎片导致
+							return NULL
+					if (costly_order && (gfp_mask & __GFP_NORETRY))								//如果申请的内存大于等于3阶，并且调用者表示不再尝试 ？？？
+						if (compact_result == COMPACT_DEFERRED)
+							goto nopage															//如果压缩过了但是失败，或者压缩过了导致一段时间内不会再次压缩
+						compact_priority = INIT_COMPACT_PRIORITY								//使用异步压缩
+retry:
+				if (alloc_flags & ALLOC_KSWAPD)
+					wake_all_kswapds(order, gfp_mask, ac)										//在尝试过程中，确保交换线程不会意外睡去
+				alloc_flags = __gfp_pfmemalloc_flags(gfp_mask)									//对gfp_mask进行分析看是否可以不受水线限制进行内存分配
+				if (!(alloc_flags & ALLOC_CPUSET) || reserve_flags)								//若乜有设置ALLOC_CPUSET，或不收水位限制； 将nodemask设置为NULL，重新找合适的zonelist
+					ac->nodemask = NULL
+					ac->preferred_zoneref = first_zones_zonelist(ac->zonelist, ac->high_zoneidx, ac->nodemask)
+				page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac)					// 888 由于可能调整了zonelist或者flags，再次尝试内存分配
+				...
+				if (!can_direct_reclaim)														//如果没有设置内存回收，到这里还没申请到内存就直接返回失败
+					goto nopage
+				if (current->flags & PF_MEMALLOC)												//如果设置了PF_MEMALLOC，则直接返回失败；(直接回收也使进程会设置PF_MEMALLOC标志位)
+					goto nopage
+				page = __alloc_pages_direct_reclaim(gfp_mask, order, alloc_flags, ac, &did_some_progress)			// 888 尝试直接回收后，在分配内存
+
+				page = __alloc_pages_direct_compact(gfp_mask, order, alloc_flags, ac, compact_priority, &compact_result)		// 888 内存回收后还是失败的话，再整理内存碎片后尝试分配内存
+
+				if (gfp_mask & __GFP_NORETRY)													//若设置了 __GFP_NORETRY，运行到这还是失败则不再尝试，直接返回申请失败
+					goto nopage
+				if (costly_order && !(gfp_mask & __GFP_RETRY_MAYFAIL))							//若没有设置 __GFP_RETRY_MAYFAIL 重试标志，且位阶大于3，也直接返回失败
+					goto nopage
+				if (should_reclaim_retry(gfp_mask, order, ac, alloc_flags, did_some_progress > 0, &no_progress_loops))			// 检查是否有需要重新回收、整理内存，再申请
+					goto retry
+				if (did_some_progress > 0 &&																							//直接回收有效果
+							should_compact_retry(ac, order, alloc_flags, compact_result, &compact_priority, &compaction_retries))		//检查是否有需要重新回收、整理内存，再申请
+					goto retry
+				if (check_retry_cpuset(cpuset_mems_cookie, ac))									//检查cpuset是否更新若更新,有的话重新走一遍慢速内存申请
+					goto retry_cpuset
+
+				page = __alloc_pages_may_oom(gfp_mask, order, ac, &did_some_progress)			//前面的一系列工作，都没有成功分配到需要的空闲内存，开启oom杀死一些进程，并从新获取的页面中直接进行空闲内存分配 
+
+				if (tsk_is_oom_victim(current) &&												//如果当前进程正在被内存耗尽杀手杀死
+						(alloc_flags == ALLOC_OOM || (gfp_mask & __GFP_NOMEMALLOC)))			//且调用这允许OOM或者不允许使用紧急内存，则申请失败并直接退出
+					goto nopage
+				if (did_some_progress) {														//oom有效果，则返回重新回收、整理内存，再申请
+					no_progress_loops = 0;
+					goto retry;
+				}
+
+
+nopage:
+				if (check_retry_cpuset(cpuset_mems_cookie, ac))									//检查cpuset是否更新若更新,有的话重新走一遍慢速内存申请
+					goto retry_cpuset;
+
+				if (gfp_mask & __GFP_NOFAIL)													//若是设置了__GFP_NOFAIL，就一直循环申请
+					if (WARN_ON_ONCE(!can_direct_reclaim))										//同时需要设置 __GFP_DIRECT_RECLAIM 可回收标志
+						goto fail
+					...
+					page = __alloc_pages_cpuset_fallback(gfp_mask, order, ALLOC_HARDER, ac)			//先使用标志位ALLOC_CPUSET尝试分配，失败再使用ALLOC_HARDER尝试分配
+					
+					cond_resched()																	//失败的话调度出去，等下次调度运行的时候retry； Desktop / Embedded 系统一般是空函数？改函数一般用于没有定义CONFIG_PREEMPT中，运行较长代码时主动让出cpu
+					goto retry
+
+fail:
+				warn_alloc(gfp_mask, ac->nodemask,
+						"page allocation failure: order:%u", order);
+got_pg:
+				return page;
+
+
+
+
+
+
+
+
+
+
+
 
 
 

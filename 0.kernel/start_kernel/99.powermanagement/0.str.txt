@@ -30,6 +30,14 @@ cat /sys/kernel/debug/wakeup_sources
 
 
 
+# 枚举系统所有的可以唤醒的irq。并且试图在interrupts找到对应项。
+ls -1 /sys/kernel/irq/ | while read line; do
+                wakeup=`cat /sys/kernel/irq/$line/wakeup`;
+                if [ "$wakeup"x == "enabled"x ]; then
+                                echo $line - $wakeup
+                                cat /proc/interrupts | grep $line
+                fi
+done 
 
 
 ================================================================================================
@@ -223,7 +231,7 @@ done; cat /proc/interrupts | head -n 1;
  
 首先看wake source的释放，如果释放睡不了。再由BSP对kernel进行排查。有可能有些驱动，没有实现wakeup机制，或者suspend中不屏蔽中断，这类驱动需要注意。
 # 查看所有的wake source，从中找出没有释放的source。
-cat /d/wakeup_sources
+cat /sys/kernel/debug/wakeup_sources
 # 查看wakeup source active的trace。
 echo 1 > /sys/kernel/debug/tracing/events/power/wakeup_source_deactivate/enable
 echo 1 > /sys/kernel/debug/tracing/tracing_on

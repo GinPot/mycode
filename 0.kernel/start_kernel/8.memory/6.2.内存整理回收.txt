@@ -1,0 +1,468 @@
+
+快速内存回收： 		不会处理脏页，只涉及干净页(用户进程使用的)、匿名页
+kswapd异步内存回收：	会处理所有类型的页面回收
+内存压缩：			也是可能进行睡眠等待？
+直接内存回收：			处理干净页(脏页只能对非文件页进行回写？)、slab、匿名页、unmap；可能会睡眠等待swap现场唤醒
+
+OOM：				
+	1、内核线程不能被kill
+	2、若一个进程分配了大量内存，则会优先kill该进程
+	3、根据进程的评分(消耗的内存大小再加上oom_score_adj的归一化处理结果)来决定kill谁
+	4、最后唤醒oom_reaper线程进行收割
+
+CGroup、cpuset、cpuacct
+memcg 全称memory cgroup，是cgroup 的一种
+
+
+
+内存回收， 主要对进程使用的内存(不活跃的内促)页进行回收：
+	1、进程堆、栈、数据端使用的匿名页： 回收存放到swap分区中(可以是一个分区，也可以是一个文件)；
+	2、进程匿名mmap共享内存使用的页： 回收存放到swap分区中；
+	3、进程shmem共享内存时使用的也：回收到swap分区中；
+
+	4、进程对文件进行读写时使用的文件缓存页(加速对磁盘数据的访问)： (1)页数据与文件数据不一致，则写会到磁盘对应的文件再释放；(2)数据一致则直接释放；
+	5、进程对文件mmap映射时使用的页： 同上；
+	6、进程代码段和可执行文件的文件页： 干净页直接释放；
+
+
+
+file_backed pages，有文件背景的页面，比如代码段、read/write方法读写的文件、mmap读写的文件等；他们有对应的硬盘文件，可直接和对应的硬盘文件进行交换；
+anonymous pages，匿名页，如stack、heap、cow后的数据段等；他们没有对应的硬盘文件，只能和虚拟内存(swapfile)或Linux的swap硬盘分区进行交换；系统内存不充分时被swap到swapfile或硬盘的swap分区。
+
+proc/sys/vm/swappiness： 			值大是回收匿名多些，值小回收有 文件背景的多些
+手动触发内存碎片整理： 					echo 1 > /proc/sys/vm/compact_memory
+清除之前的page chache： 				echo 3 > /proc/sys/vm/drop_caches
+
+
+PF_MEMALLOC： 设置该参数后，在慢速内存申请过程中会忽略水位的限制
+pfmemalloc_wait： swap线程当进行一轮内存回收后，发现有一个zone水位高于high就会唤醒因等待水位平衡而进入睡眠的直接内存回收线程
+=============================================================================================================================================
+
+快速内存回收: 触发在get_page_from_freelist()函数中,当内存分配后zone的空闲内存小于该zone的low水线阈值和保留页框数量时
+	1、对不达标的zone对应NUMA节点进行操作；
+	2、不能进行unmap(一般只能对没有进程映射的页进行回收)和writeback(不能释放脏页活匿名页,只能回收干净页)操作，避免回收太耗时;(根据node_reclaim_mode值来确定是否可以unmap和writeback)
+	3、主要是回收干净页、匿名页
+	4、回收页面大于需要分配的页数，或者循环次数大于sc.priority(没循环一次改值减一，扫描的页数就会更多)则快速回收结束
+
+
+
+node_reclaim_mode 的值是由/proc/sys/vm/zone_reclaim_mode配置的，其有如下4个值：
+
+0x0：默认值，该值表示“快路径”中不触发快速内存回收。
+0x1(RECLAIM_ZONE)：对zone执行shrink_inactive_list操作。
+0x2(RECLAIM_WRITE)：快速内存回收过程中，允许进行页回写操作。注意，这里说的页回写指的是允许脏匿名页回写，而脏文件页只能在kswapd中进行回写，设置了改标志快速内存回收也不会进行回写操作
+0x4(RECLAIM_UNMAP)：快速内存回收过程中，允许对页进行unmap操作。
+
+
+
+
+if (node_reclaim_mode == 0 || !zone_allows_reclaim(ac->preferred_zoneref->zone, zone))
+	continue
+
+node_reclaim(zone->zone_pgdat, gfp_mask, order)
+	if (node_pagecache_reclaimable(pgdat) <= pgdat->min_unmapped_pages &&							//根据 node_reclaim_mode 计算可以回收的缓存页(主要是文件系统的缓存？) 做判断
+	    node_page_state(pgdat, NR_SLAB_RECLAIMABLE) <= pgdat->min_slab_pages)						//判断 NR_SLAB_RECLAIMABLE 的大小
+		return NODE_RECLAIM_FULL;																	// 小于 pgdat 的值则不用进行内存回收，直接返回
+	if (!gfpflags_allow_blocking(gfp_mask) || (current->flags & PF_MEMALLOC))						//没有设置__GFP_DIRECT_RECLAIM的话，且设置了PF_MEMALLOC，则直接退出不进行扫描
+		return NODE_RECLAIM_NOSCAN;
+	if (node_state(pgdat->node_id, N_CPU) && pgdat->node_id != numa_node_id())						//仅在本地节点或没有关联处理器的节点上运行节点回收
+		return NODE_RECLAIM_NOSCAN;
+	if (test_and_set_bit(PGDAT_RECLAIM_LOCKED, &pgdat->flags))										// 设置 PGDAT_RECLAIM_LOCKED 标志位，防止发生并发
+		return NODE_RECLAIM_NOSCAN;
+
+	ret = __node_reclaim(pgdat, gfp_mask, order)
+		...
+		struct scan_control sc = {
+			.nr_to_reclaim = max(nr_pages, SWAP_CLUSTER_MAX),										//需要回收的页数，最少回收32个页
+			.gfp_mask = current_gfp_context(gfp_mask),												//内存申请分配使用的分配标志
+			.order = order,																			//这次内存申请的位阶
+			.priority = NODE_RECLAIM_PRIORITY,														//页回收优先级，越低，扫描的页数越多，4次扫描zone的1/16
+			.may_writepage = !!(node_reclaim_mode & RECLAIM_WRITE),									//确定是否可以进行脏页面的回写操作
+			.may_unmap = !!(node_reclaim_mode & RECLAIM_UNMAP),										//是否可以取消页面的映射
+			.may_swap = 1,																			//是否能将匿名页放到swap分区
+			.reclaim_idx = gfp_zone(gfp_mask),														//指定页回收最合适的zone_id
+		};
+		...
+		cond_resched()																				//在没有定义CONFIG_PREEMPT系统中，为了防止内核执行时间过长导致可能发生的sloft lockup或者较大的调度延迟，这里主动让出cpu； 定义了的话为空函数
+		...
+		noreclaim_flag = memalloc_noreclaim_save()													// 保存之前的PF_MEMALLOC状态，并设置PF_MEMALLOC标志，后续会恢复这个标志的状态
+		p->flags |= PF_SWAPWRITE																	// 设置标志运行匿名内存保存到swap分区中
+		...
+		if (node_pagecache_reclaimable(pgdat) > pgdat->min_unmapped_pages)
+			do {
+				shrink_node(pgdat, &sc);
+					struct mem_cgroup *root = sc->target_mem_cgroup									//当内存回收是针对整个zone时，该值为NULL
+					...
+					do {
+						memset(&sc->nr, 0, sizeof(sc->nr));												//nr记录扫描过长中各类页框的数量??
+						nr_reclaimed = sc->nr_reclaimed													//记录本次回收开始前回收到的页框数量，第一次是0
+						nr_scanned = sc->nr_scanned														//记录本次回收开始前扫描过的页框数量，第一次是0
+						...
+						memcg = mem_cgroup_iter(root, NULL, &reclaim)									//获取最上层的memcg，如果没有指定开始的root，则默认是root_mem_cgroup； root_mem_cgroup管理的每个zone(?numa_id?)的lru链表就是每个zone完整的LRU链表
+						do {												//第二个循环只要循环所有的Cgroup节点
+							...
+							shrink_node_memcg(pgdat, memcg, sc, &lru_pages)								// 888 lru_pages:本次内存回收扫描的页数
+								struct lruvec *lruvec = mem_cgroup_lruvec(pgdat, memcg)					//获取NUMA节点对应的 lruvec 结构体包含LRU链表；若CGroup使能，则获取本NUMA节点memcg的LRU链表集合
+								unsigned long nr[NR_LRU_LISTS]											//记录本NUMA节点的LRU链表还有多少页面需要被扫描
+								...
+								get_scan_count(lruvec, memcg, sc, nr, lru_pages)						//利用proc接口中的swappiness数据和sc->priority数据来计算本节点的4个lru链表中分别应该扫描多少个页面来进行内存回收操作
+								...
+								nr_reclaimed += shrink_list(lru, nr_to_scan, lruvec, sc)				// 888			
+								...
+									https://blog.csdn.net/u010923083/article/details/116278456			//LRU算法参考链接
+									https://www.cnblogs.com/LoyenWang/p/11827153.html
+								...
+								sc->nr_reclaimed += nr_reclaimed										//记录本次内存回收页面数量
+								...
+							...
+							if (sc->may_shrinkslab)
+								shrink_slab(sc->gfp_mask, pgdat->node_id, memcg, sc->priority)
+									...
+									list_for_each_entry(shrinker, &shrinker_list, list)					//遍历shrinker_list链表，通过register_shrinker(&lowmem_shrinker)接口添加到shrinker_list链表中
+										do_shrink_slab(&sc, shrinker, priority)							// 888 
+											...
+											shrinker->scan_objects(shrinker, shrinkctl)					//进行扫描回收，如lowmemorykiller找出一个进程被kill，返回释放的内存大小
+											...
+							vmpressure(sc->gfp_mask, memcg, false, sc->nr_scanned - scanned, sc->nr_reclaimed - reclaimed)		//通过扫描/回收比率计算内存压力
+							...
+							if (!current_is_kswapd() && sc->nr_reclaimed >= sc->nr_to_reclaim)			//kswap线程需要扫描所有Cgroup节点，如不是kswap线程且已回收的页大于预计的页数，则退出
+								break
+						while ((memcg = mem_cgroup_iter(root, memcg, &reclaim)))
+						...
+						...
+					while (should_continue_reclaim(pgdat, sc->nr_reclaimed - nr_reclaimed, sc->nr_scanned - nr_scanned, sc))	//若本节点已回收的页面数sc->nr_reclaimed大于等于（2 << sc->order）或者非活跃lru链表上的页总数小于等于（2 << sc->order）时,退出循环
+					
+			} while (sc.nr_reclaimed < nr_pages && --sc.priority >= 0);								//回收的页面不满足就降低优先级，扫描更多的页
+		...
+	}	
+
+
+	clear_bit(PGDAT_RECLAIM_LOCKED, &pgdat->flags)													//清除 PGDAT_RECLAIM_LOCKED 标志位
+
+
+=============================================================================================================================================
+
+kswap： 进入慢速内存申请后触发
+	0、主要进行有IO操作的内存回收，如脏文件回写、unmap操作；
+	1、所有zone(0到high_zoneidx的zone)的水位在减去申请的内存后还低于high，才会唤醒swap线程进行异步回收；
+		1.1、swap线程开始运行时说明所有zone水位都低于high，会直接进程内存回收；
+		1.2、若有一个zone水位高于high，则会进入主动循环100ms的内存回收，且唤醒内存压缩；
+		1.3、当100ms的主动睡眠唤醒时有一个zone水位高于high就会进入永久睡眠；被动唤醒时会继续进行异步回收
+	2、当进行一轮内存回收后，发现有一个zone水位高于high就会唤醒因等待水位平衡而进入睡眠的直接内存回收线程
+
+
+wake_all_kswapds(order, gfp_mask, ac)
+	for_each_zone_zonelist_nodemask(zone, z, ac->zonelist, high_zoneidx, ac->nodemask)				//循环zonelist所有zone，实际上是取zone对应的pglist_data，即循环所有NUMA节点
+		wakeup_kswapd(zone, gfp_mask, order, high_zoneidx)
+			...
+			pgdat->kswapd_classzone_idx = max(pgdat->kswapd_classzone_idx, high_zoneidx)			// kswapd_classzone_idx 此次内存分配最希望在那个zone上分配
+			pgdat->kswapd_order = max(pgdat->kswapd_order, order)									// kswapd_order 此次内存分配的最大位阶
+			...
+			if (pgdat->kswapd_failures >= MAX_RECLAIM_RETRIES ||									//失败次数过多
+					(pgdat_balanced(pgdat, order, classzone_idx) && !pgdat_watermark_boosted(pgdat, classzone_idx)))		//或者所有zone都低于high水位线时才会唤醒swap线程
+				if (!(gfp_flags & __GFP_DIRECT_RECLAIM))											//若不能进程内存回收，则唤醒内存压缩线程
+					wakeup_kcompactd(pgdat, order, classzone_idx)
+				return
+			wake_up_interruptible(&pgdat->kswapd_wait)
+
+
+module_init(kswapd_init)
+	for_each_node_state(nid, N_MEMORY)																//为每个NUMA节点创建kswap线程, 不是percpu的
+		kswapd_run(nid)
+			pgdat->kswapd = kthread_run(kswapd, pgdat, "kswapd%d", nid)
+
+kswapd()
+	...
+	PF_MEMALLOC： 标记这个线程申请内存优先级很高，需要第一时间响应(内存分配线程)
+	PF_SWAPWRITE： 允许写入swap分区
+	PF_KSWAPD： 标记该任务是一个kswap任务
+	tsk->flags |= PF_MEMALLOC | PF_SWAPWRITE | PF_KSWAPD;
+	
+	for ( ; ; )
+		...
+kswapd_try_sleep:
+		kswapd_try_to_sleep(pgdat, alloc_order, reclaim_order, classzone_idx)						//在此处休眠，此处主要分长久睡眠(等待 wake_all_kswapds 唤醒)，和主动循环100ms睡眠
+			prepare_to_wait(&pgdat->kswapd_wait, &wait, TASK_INTERRUPTIBLE)							//休眠钱的准备
+			if (prepare_kswapd_sleep(pgdat, reclaim_order, classzone_idx))							//判断是否需要循环100ms睡眠？所有zone都小于high则不进入主动100ms循环，有个别zone满足high睡眠则进入主动循环睡眠
+						if (waitqueue_active(&pgdat->pfmemalloc_wait))								//唤醒节点pfmemalloc_wait队列中的所有等待任务，该操作于知己诶内存回收有关？
+							wake_up_all(&pgdat->pfmemalloc_wait)
+						if (pgdat->kswapd_failures >= MAX_RECLAIM_RETRIES)							// 进行MAX_RECLAIM_RETRIES次回收页数都为0，则说明swap线程已经无法回收到内存了，返回true，进行循环100ms睡眠并依赖内存压缩
+							return true
+						if (pgdat_balanced(pgdat, order, classzone_idx))							//该NUMA节点所有zone的空闲内存减去需要回收的内存大于zone的high水位线+保留内存，则返回true
+							return true
+						return false
+				reset_isolation_suitable(pgdat)														//随眠钱清楚节点所有页块的PB_migrate_skip标记，下次节点内存压缩时会扫描更多的页块？？？
+				wakeup_kcompactd(pgdat, alloc_order, classzone_idx)									//睡眠前唤醒内存压缩线程，alloc_order：希望压缩出空闲内存的位阶数，classzone_idx：希望在哪个zone上压缩
+				
+				remaining = schedule_timeout(HZ/10)													//100ms循环主动睡眠，返回0是周期性主动唤醒； 非0则是睡眠过程中被动唤醒(如申请内存不足时唤醒该线程)
+				
+				if (remaining)																		//被动唤醒时更新kswapd_classzone_idx，kswapd_order
+					pgdat->kswapd_classzone_idx = kswapd_classzone_idx(pgdat, classzone_idx)
+					pgdat->kswapd_order = max(pgdat->kswapd_order, reclaim_order)
+		
+				finish_wait(&pgdat->kswapd_wait, &wait)												//设置线程状态为running
+				...
+			/*
+			1、主动循环睡眠100ms时间到了，或者没有进入主动睡眠； 且失败次数过多，或者个别zone水位高于在high，则进入长久睡眠
+			2、被动唤醒，且失败次数不多，且所有zone水位低于high时则继续进行内存回收
+			*/
+			if (!remaining && prepare_kswapd_sleep(pgdat, reclaim_order, classzone_idx))
+				...
+				schedule()
+			esle
+				if (remaining)
+					count_vm_event(KSWAPD_LOW_WMARK_HIT_QUICKLY);									//被动唤醒回收，一般是在慢速内存申请时唤醒，水位线是low
+				else
+					count_vm_event(KSWAPD_HIGH_WMARK_HIT_QUICKLY);									//睡眠是主动睡眠回收，水位线是high
+
+		alloc_order = reclaim_order = pgdat->kswapd_order											//跟新局部变量，alloc_order和classzone_idx是改线程流程控制中的重要判断依据
+		classzone_idx = kswapd_classzone_idx(pgdat, classzone_idx)
+		...
+		if (kthread_should_stop())																	//若线程被杀死，侧退出循环
+			break;
+		...
+		reclaim_order = balance_pgdat(pgdat, alloc_order, classzone_idx)							//进行页面回收的主函数；reclaim_order 表明该次回收过程获取到的最大连续内存块的阶数
+			...
+			struct scan_control sc = 
+				.gfp_mask = GFP_KERNEL,																//分配掩码
+				.order = order,																		//期望回收的内存位阶
+				.may_unmap = 1,																		//允许取消页面的映射并进行回收处理
+			...
+restart:
+			sc.priority = DEF_PRIORITY;
+			...
+			if (buffer_heads_over_limit)															//如果buffer_heads超过了允许的最大值，则将回收该NUMA节点的所有在线zone
+				...
+				sc.reclaim_idx = i
+			balanced = pgdat_balanced(pgdat, sc.order, classzone_idx)
+			...
+			if (!nr_boost_reclaim && balanced)														// classzone_idx到0的zone中，有一个水位大于high则不对该NUMA节点进行内存回收直接return
+				goto out
+			...
+			sc.may_writepage = !laptop_mode && !nr_boost_reclaim;
+			sc.may_swap = !nr_boost_reclaim;
+			sc.may_shrinkslab = !nr_boost_reclaim;
+			
+			age_active_anon(pgdat, &sc)																//若当前节点不活跃匿名页LRU链表页面数量过低(通过inactive_list_is_low函数判断),则通过shrink_active_list函数将该节点活跃匿名页lru链表上的页迁移到不活跃匿名页lru链表上去
+			...
+			kswapd_shrink_node(pgdat, &sc)
+				...
+				for (z = 0; z <= sc->reclaim_idx; z++)
+					zone = pgdat->node_zones + z
+					...
+					sc->nr_to_reclaim += max(high_wmark_pages(zone), SWAP_CLUSTER_MAX)				//初始化需要回收的页面数
+					shrink_node(pgdat, sc)															// 888 进行内存回收操作
+			if (waitqueue_active(&pgdat->pfmemalloc_wait) && allow_direct_reclaim(pgdat))			// ???
+				wake_up_all(&pgdat->pfmemalloc_wait)
+			...
+			
+		/*
+			此处针对被动唤醒的情况：
+			回收的最大阶小于期望的阶时，跳转到 kswapd_try_sleep 准备循环100ms的睡眠，sleep钱会唤醒kcompactd线程去做内存整理，希望能整理出alloc_order位阶的内存
+		*/
+		if (reclaim_order < alloc_order)
+			goto kswapd_try_sleep
+
+=============================================================================================================================================
+
+
+直接内存回收: 慢速分配中触发
+	1、若不是内核线程，没有收到signal信号打断，该NUMA节点所有zone的空闲内存小于所有min水位总和的一半，则需要唤醒swap线程进一步内存回收，睡眠等待直到空闲内存大于min水位；(在swap线程中回收到有一个zone水位高于high就会唤醒该线程)
+	2、主要回收匿名页、干净页、非文件的脏页、slab、unmap
+
+
+
+page = __alloc_pages_direct_reclaim(gfp_mask, order, alloc_flags, ac, &did_some_progress)
+	*did_some_progress = __perform_reclaim(gfp_mask, order, ac)																	//进行直接内存回收操作
+		...
+		cpuset_memory_pressure_bump()																							//若设置了cpuset_memory_pressure_enabled，则先更新当前任务的cpuset频率表fmeter
+		...
+		noreclaim_flag = memalloc_noreclaim_save()																				// 888 把当前任务标志设置上`PF_MEMALLOC`,防止递归调用页面回收进程
+		progress = try_to_free_pages(ac->zonelist, order, gfp_mask, ac->nodemask)												//进程内存回收处理
+			struct scan_control sc = 
+				.nr_to_reclaim = SWAP_CLUSTER_MAX,																				//计划回收32个页框
+				.gfp_mask = current_gfp_context(gfp_mask),
+				.reclaim_idx = gfp_zone(gfp_mask),
+				.order = order,																									//本次内存回收的位阶
+				.nodemask = nodemask,																							//运行进行内存回收的node掩码
+				.priority = DEF_PRIORITY,																						//优先级默认12
+				.may_writepage = !laptop_mode,																					//与/proc/sys/vm/laptop_mode有关laptop_mode为0，则允许进行回写操作，即使允许回写；但只能对非文件页(内存文件系统?)进行回写
+				.may_unmap = 1,																									//允许进行unmap操作
+				.may_swap = 1,																									//允许进行非文件页的操作(匿名页)
+				.may_shrinkslab = 1,																							//运行slab操作
+			...
+			if (throttle_direct_reclaim(sc.gfp_mask, zonelist, nodemask))														// 判断是直接进行内存回收，还是睡眠等待
+						if (current->flags & PF_KTHREAD)																		//若是内核线程(如间接负责内存回收的线程)，需要进行不阻塞的内存直接回收，尽可能保证能申请到内存
+							goto out
+						if (fatal_signal_pending(current))																		//如果该线程接受到致命信号挂起了(如kill信号)，那该线程也不需要进行阻塞式的直接内存回收，一遍快速返回杀死线程释放其内存
+							goto out
+						for_each_zone_zonelist_nodemask(zone, z, zonelist, gfp_zone(gfp_mask), nodemask)						//循环zonelist，获取到第一个有效的NUAM节点就会退出
+							...
+							pgdat = zone->zone_pgdat																			//获取对应的NUMA节点
+							if (allow_direct_reclaim(pgdat))																	// 1、如果NUMA节点对应所有zone没有min水位时返回true，进行不阻塞式内存回收
+								goto out;																						// 2、所有zone空闲内存大于所有zone总的min水位的一半返回true，也进行不阻塞式回收；若小于，则唤醒swap线程，准备进入休眠
+							break;
+						...
+						if (!(gfp_mask & __GFP_FS))																				//不允许__GFP_FS时
+							wait_event_interruptible_timeout(pgdat->pfmemalloc_wait, allow_direct_reclaim(pgdat), HZ)			//TASK_INTERRUPTIBLE，该进入进入1秒的睡眠，直到被swap唤醒或者超时，判断allow_direct_reclaim()空闲内存大于min水位的一半则退出睡眠，否则继续1秒睡眠
+						wait_event_killable(zone->zone_pgdat->pfmemalloc_wait, allow_direct_reclaim(pgdat))						//TASK_KILLABLE，支持__GFP_FS，进入永久睡眠，直到被swap唤醒，在判断水位情况看是否需要再次睡眠
+				return 1																										//该条件直接返回1的话说明跳过直接回收，继续往下走
+			...
+			nr_reclaimed = do_try_to_free_pages(zonelist, &sc)																	//睡眠后，或者不需要睡眠的，则直接开始进行内存直接回收
+				...
+				delayacct_freepages_start()																						//结合 delayacct_freepages_end 计算页面回收的时间开销
+				...
+				do{
+					...
+					shrink_zones(zonelist, sc)																					// 888 进行内存回收
+						for_each_zone_zonelist_nodemask(zone, z, zonelist, sc->reclaim_idx, sc->nodemask)						// 循环zonelist所有zone
+							...
+								...
+								if (IS_ENABLED(CONFIG_COMPACTION) && sc->order > PAGE_ALLOC_COSTLY_ORDER && compaction_ready(zone, sc))
+									sc->compaction_ready = true																	//如果zone空闲页框数满足压缩条件，跳过内存回收，将进行内存压缩
+									continue
+								...
+							...
+							shrink_node(zone->zone_pgdat, sc)																	// 888 只去zone对应的NUMA节点进行内存回收
+					...
+					if (sc->nr_reclaimed >= sc->nr_to_reclaim)
+						break																									//回收页数大于等于32时退出直接内存回收
+					if (sc->compaction_ready)
+						break;																									//若可以进行内存压缩，也退出循环
+					if (sc->priority < DEF_PRIORITY - 2)
+						sc->may_writepage = 1																					//循环3次后还是不满足要求，则使能回写
+				}while (--sc->priority >= 0)																					//循环回收，优先级越低，扫描页越多
+				...
+				if (sc->nr_reclaimed)
+					return sc->nr_reclaimed																						//若成功回收页框，返回页框数
+				if (sc->compaction_ready)
+					return 1
+				if (sc->memcg_low_skipped) {																					//若回收不到内存，且没达到压缩条件；则调整回收参数，再给系统一次机会进行内存回收
+					sc->priority = initial_priority;
+					sc->memcg_low_reclaim = 1;
+					sc->memcg_low_skipped = 0;
+					goto retry;
+				}
+				return 0																										//返回0的话这次内存回收不会尝试申请内存，继续往下走
+			
+			nr_reclaimed = do_try_to_free_pages(zonelist, &sc)
+		...																														//恢复当前任务标志
+	...
+	page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac)																//回收后尝试快速内存申请
+
+
+
+
+
+
+
+
+
+
+
+=============================================================================================================================================
+
+swap-out： 内存数据回写到分区中；
+swap-in：  分区数据写入到内存中
+
+
+#define PAGEVEC_SIZE	14
+struct pagevec {
+	unsigned long nr;
+	unsigned long cold;
+	struct page *pages[PAGEVEC_SIZE];  										//存放14个page结构
+};
+
+//这些结构体主要功能是将CPU缓存的页面转移到LRU链表中： 通过调用pagevec_lru_move_fn函数最终用del_page_from_lru_list/add_page_to_lru_list接口来从一个链表中删除，并加入到另一个链表中
+//为了提高性能和降低自旋锁竞争压力，每个CPU有5个该结构体，先将页缓存到这个结构体的数组中，累计到14个后一次性在加入到LRU链表中
+static DEFINE_PER_CPU(struct pagevec, lru_add_pvec);						//不属于LRU链表的缓存页，加入到LRU链表中;
+static DEFINE_PER_CPU(struct pagevec, lru_rotate_pvecs);					//将活动文件页移动到非活动文件页中的缓存
+static DEFINE_PER_CPU(struct pagevec, lru_deactivate_file_pvecs);			//将活动页移动到非活动页中的缓存
+static DEFINE_PER_CPU(struct pagevec, lru_lazyfree_pvecs);					//将活动匿名页移动到非活动文件页中的缓存
+static DEFINE_PER_CPU(struct pagevec, activate_page_pvecs);					//将非活动页移动到活动页的缓存
+
+mlock： PG_locked，NR_MLOCK，VM_LOCKED，在回收内存时，不会回收lock的内存
+enum lru_list {
+	LRU_INACTIVE_ANON = LRU_BASE,											//PG_active=0
+	LRU_ACTIVE_ANON = LRU_BASE + LRU_ACTIVE,								//PG_active=1
+	LRU_INACTIVE_FILE = LRU_BASE + LRU_FILE,								//PG_active=0
+	LRU_ACTIVE_FILE = LRU_BASE + LRU_FILE + LRU_ACTIVE,						//PG_active=1
+	LRU_UNEVICTABLE,														//锁定在内存中，不允许回收的物理页，如内核大部分页框都是不允许回收的
+	NR_LRU_LISTS
+};
+
+struct lruvec {
+	struct list_head		lists[NR_LRU_LISTS];							//在内存回收时，在LRU链表中检索最少使用的页面进行处理；页框先放在链表的头部，后慢慢移动到链表的尾部
+	struct zone_reclaim_stat	reclaim_stat;
+	/* Evictions & activations on the inactive file list */
+	atomic_long_t			inactive_age;
+	/* Refaults at the time of last reclaim cycle */
+	unsigned long			refaults;
+	struct pglist_data *pgdat;
+};
+
+typedef struct pglist_data {
+...
+	/* Fields commonly accessed by the page reclaim scanner */
+	struct lruvec		lruvec;
+...
+}
+
+
+struct scan_control {
+	unsigned long nr_to_reclaim;		//需要回收的页面数量
+	gfp_t gfp_mask;						//申请分配的掩码，用户申请页面时可以通过设置标志来限制调用底层文件系统或不允许读写存储设备，最终传递给LRU处理
+	int order;							//申请分配内存块的阶，最终期望内存回收后，系统能分配该阶的连续内存块
+	nodemask_t	*nodemask;				//内存节点掩码，空指针则访问所有的节点
+	struct mem_cgroup *target_mem_cgroup;//目标memcg，如果是针对整个zone进行的，则此为NULL 
+	/* 
+	 *扫描LRU链表的优先级，用于计算每次扫描页面的数量(total_size >> priority，初始值12)，值越小，扫描的
+	 *页面数越大，逐级增加扫描粒度 
+	 * (1)代表一次扫描(total_size >> priority)个页框 
+     * (2)优先级越低，一次扫描的页框数量就越多
+     * (3)默认优先级为12
+     */
+	int priority;
+	enum zone_type reclaim_idx;			//The highest zone to isolate pages for reclaim from
+	unsigned int may_writepage:1;		//是否允许把修改过文件页写回存储设备,与分配标志的__GFP_IO和__GFP_FS有关
+	unsigned int may_unmap:1;			//是否取消页面的映射并进行回收处理,将所有映射了此页的页表项清空
+	unsigned int may_swap:1;			//是否将匿名页交换到swap分区，并进行回收处理,将所有映射了此页的页表项清空
+	unsigned int may_thrash:1;			//Can cgroups be reclaimed below their normal consumption range?
+	unsigned int hibernation_mode:1;
+	unsigned int compaction_ready:1;	//扫描结束后会标记，用于内存回收判断是否需要进行内存压缩
+	unsigned long nr_scanned;			//统计扫描过的非活动页面总数
+	unsigned long nr_reclaimed;			//统计回收了的页面总数
+};
+
+
+
+enum pageflags {
+    PG_locked,			// Page is locked. Don't touch.
+    PG_referenced, 		//表示页最近被访问(只有文件页使用)
+    PG_dirty,  			//脏页
+    PG_lru,   			//处于LRU链表中
+    PG_active, 			//活动页
+	PG_private,			//页描述符中的page->private保存有数据
+	PG_writeback,		//页正在进行回写
+	PG_reclaim,			//页正在进行回收，只有在内存回收时才会对需要回收的页进行此标记
+    PG_swapbacked,		// Page is backed by RAM/swap,此页可写入swap分区，一般用于表示此页是非文件页
+    PG_unevictable,		// Page is "unevictable"
+	PG_mlocked,			//页被锁在内存中
+	PG_swapcache,		//页已经加入到了swap cache中(只有非文件页使用)
+}    
+
+
+enum scan_balance {
+	SCAN_EQUAL,  		//计算出的扫描值按原样使用
+	SCAN_FRACT,  		//将分数应用于计算的扫描值
+	SCAN_ANON,  		//对于文件页LRU，将扫描次数更改为0
+	SCAN_FILE,     		/对于匿名页LRU，将扫描次数更改为0
+};
+
+/proc/sys/vm/swapiness
+
+　　此参数影响进行内存回收时，扫描匿名页lru链表和扫描文件页lru链表的比例，范围是0~200，系统默认是30：
+
+		接近0：进行内存回收时，更多地去扫描文件页lru链表，如果为0，那么就不会去扫描匿名页lru链表。
+		接近200：进行内存回收时，更多地去扫描匿名页lru链表。
+

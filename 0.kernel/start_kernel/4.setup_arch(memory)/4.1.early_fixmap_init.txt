@@ -5,6 +5,32 @@
 4、boot cpu init_mm(mm_struct)的页表信息先用init_pg_dir和idmap_pg_dir做mmu使能的平滑切换，后面在 setup_arch()会切到使用 swapper_pg_dir;
 
 
+*******************************************
+
+下面虚拟地址转物理地址会区分是内核代码，还是后续申请的内核线性映射区PAGE_OFFSET的内存；将用不同方法转换
+	虚拟地址转物理地址：
+		__virt_to_phys(addr)
+	物理地址转虚拟地址：
+		__phys_to_virt(addr)
+
+
+
+#define __phys_to_virt(x)   ((unsigned long)((x) - PHYS_OFFSET) | PAGE_OFFSET)				物理地址转虚拟地址，直接通过PAGE_OFFSET转换
+#define __virt_to_phys(x)	__virt_to_phys_nodebug(x)
+
+#define __is_lm_address(addr)   (!!((addr) & BIT(VA_BITS - 1)))
+
+#define __lm_to_phys(addr)  (((addr) & ~PAGE_OFFSET) + PHYS_OFFSET)
+#define __kimg_to_phys(addr)    ((addr) - kimage_voffset)
+
+#define __virt_to_phys_nodebug(x) ({                    \
+    phys_addr_t __x = (phys_addr_t)(x);             \
+    __is_lm_address(__x) ? __lm_to_phys(__x) :          \
+                   __kimg_to_phys(__x);         \
+})
+
+*******************************************
+
 
 内核代码加载的物理地址和虚拟地址之间的转换：
 	虚拟地址转物理地址：
@@ -12,17 +38,15 @@
 	物理地址转虚拟地址：
 		__phys_to_kimg(addr)
 
-内核普通内存的物理地址和虚拟地址转换： 内存的物理地址一定是和 PAGE_OFFSET 线性映射
-	虚拟地址转物理地址：
-		__virt_to_phys(addr)
-	物理地址转虚拟地址：
-		__phys_to_virt(addr)
+
 
 #define __pa(x)			__virt_to_phys((unsigned long)(x))
 
 paging_init初始化之后，slab初始化前后可以参考sparse_index_alloc(nid)申请内存, 参考memblock_free_early(物理地址，size)释放内存
 
 <==================================================================================================================>
+cat /proc/vmallocinfo				内核虚拟地址(通过vmalloc分配、VM_IOREMAP、VM_MAP)使用情况
+
 
 
 TTBR1 内核虚拟地址：	0xffff000000000000 - 0xffffffffffffffff																	256T

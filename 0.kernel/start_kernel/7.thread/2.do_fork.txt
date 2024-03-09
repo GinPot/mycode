@@ -1,3 +1,21 @@
+TASK_INTERRUPTIBLE： 进程是可以被信号和wake_up()唤醒
+TASK_KILLABLE： 进程是可以被wake_up()唤醒，不能被常规信号唤醒，但是可以被致命信号唤醒
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 1、CLONE_UNTRACED：
 	一个进程(tracer?strace、gdb)可以观察控制另一个进程，有这个参数该进程就不能被trace，内核线程都会携带这个参数；
 2、CLONE_NEWNS：

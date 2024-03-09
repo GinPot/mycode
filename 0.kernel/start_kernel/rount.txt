@@ -26,7 +26,7 @@
 		psci_dt_init()																		//解析psci节点,设置上层调用pcsi相关接口回调，是后续唤醒其他核做准备
 	...
 	smp_prepare_boot_cpu()																	//检测cache的类型(如VIPT),获取cpu一些特性,或需要应用什么erratum的patch
-	boot_cpu_hotplug_init()																	//boot cpu直接设置state=CPUHP_ONLINE
+	boot_cpu_hotplug_init()																	// 888 boot cpu直接设置state=CPUHP_ONLINE
 	build_all_zonelists(NULL)																//配置每个NUMA节点中的zone的排序，后续申请内存就按照这个排序依次尝试申请
 	...
 	sched_init()																			//各类调度器的初始化
@@ -56,6 +56,7 @@
 					...
 					workqueue_init()
 					...
+					init_mm_internals()														//内存vmstat相关参数初始化；调式接口/proc/buddyinfo,pagetypeinfo,vmstat,zoneinfo初始化
 					do_pre_smp_initcalls()													//主要处理early_initcall(spawn_ksoftirqd)定义的函数，一般是需要smp之前初始化
 						trace_initcall_level("early")
 						do_one_initcall(initcall_from_entry(fn))							//ksoftirqd内核线程创建
@@ -71,16 +72,19 @@
 						...
 						do_initcalls()
 							do_initcall_level()	//主要驱动初始化
+							init_per_zone_wmark_min()								__define_initcall(fn, 1)		//zone水位初始化,每个总lowmem_reserve初始化
 		
 5.							postcore_initcall(i2c_init)								__define_initcall(fn, 2)		//i2c总线初始化
 							arch_initcall(gic_init_sys)								__define_initcall(fn, 3)		//注册系统休眠唤醒相关的syscore
 6.							arch_initcall_sync(of_platform_default_populate_init)	__define_initcall(fn, 3s)		//设备树展开后个节点注册platform_device
 							subsys_initcall(param_sysfs_init)						__define_initcall(fn, 4)		//创建/sys/module/xxx/parameters/xxx文件，其值是内核的一个变量
 							clocksource_done_booting()								__define_initcall(fn, 5)		//切换为高精度timer,before device_initcall but after subsys_initcall
-7.							module_init(x)/device_initcall()						__define_initcall(fn, 6)		//普通驱动注册
+7.							module_init(x)/device_initcall()						__define_initcall(fn, 6)		//普通驱动注册,初始化kswap线程
 					...
 				...
 				free_initmem()																//释放__init_begin到__init_end的内存，包含所有驱动的入口
+					free_initmem_default(POISON_FREE_INITMEM)
+						free_reserved_area(&__init_begin, &__init_end, poison, "unused kernel")
 				...
 				if (ramdisk_execute_command)												//运行ramdisk
 					run_init_process(ramdisk_execute_command)
@@ -104,12 +108,25 @@
 
 
 
+Freeing unused kernel memory: 768K
+static __initdata struct kmem_cache boot_kmem_cache, boot_kmem_cache_node
 
 
 
+__define_initcall(fn, 1)	
+	___define_initcall(fn, id, .initcall##id)
+	___define_initcall(fn, id, __sec)
+		asm(".section	\"" #__sec ".init\", \"a\"	\n"	\				// .section .initcall1.init, 在vmlinux.lds可以找到和这个段，只是保存驱动函数的地址入口？
+		"__initcall_" #fn #id ":			\n"	\
+			".long	" #fn " - .			\n"	\
+			".previous					\n");
 
-
-
+include\linux\init.h
+#define __init		__section(.init.text) __cold  __latent_entropy __noinitretpoline
+#define __initdata	__section(.init.data)
+#define __initconst	__section(.init.rodata)
+#define __exitdata	__section(.exit.data)
+#define __exit_call	__used __section(.exitcall.exit)
 
 
 

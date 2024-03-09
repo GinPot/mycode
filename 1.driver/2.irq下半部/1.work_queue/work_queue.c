@@ -4,11 +4,18 @@
 
 static int wait_test_flag = 0;
 
-struct work_struct test_work_queue;								//不定义指针
+//platform_set_drvdata(pdev, di)
+struct work_test {
+	int cont;
+	struct work_struct test_work_queue;								//不定义指针
+};
 
+struct work_test *worktest;
 
 void work_queue_test_hardl(struct work_struct *work)
 {
+	struct work_test *worktest = container_of(work, struct work_test, test_work_queue)
+	
 	wait_test_flag++;
 	printk("%s: wait_test_flag=%d\n", __func__, wait_test_flag);	
 }

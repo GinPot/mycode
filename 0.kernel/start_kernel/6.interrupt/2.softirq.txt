@@ -3,8 +3,8 @@
 2、softirq不会抢占另外一个正在运行的softirq，需要等到之前的softirq运行完后才会执行下一个；
 3、softirq可以在多个CPU上同时运行
 
-4、在中断结束 irq_exit()时，使能软中断local_bh_enable()时都会判断是否有softirq需要处理；
-5、irq_exit()和local_bh_enable()时有软中断直接运行软中断处理
+4、在中断结束 irq_exit()时，使能软中断local_bh_enable()时都会判断是否有softirq需要处理；raise_softirq()方式则是唤醒软中断线程
+5、上面的3中情况最终都会调用到__do_softirq()禁止软中断，禁止调度，使能硬中断，最后再处理软中断的handle
 
 6、开机创建各cpu的ksoftirqd内核线程；
 7、驱动用的raise_softirq接口是唤醒ksoftirqd内核线程去执行软中断
@@ -78,7 +78,7 @@ start_kernel()
 
 
 
-使能禁止softirq：														//给线程上下文使用的，用于放置softirq handler抢占临界区域
+使能禁止softirq：														//给线程上下文使用的，用于防止softirq handler抢占临界区域
 	local_bh_disable()
 		__local_bh_disable_ip(_THIS_IP_, SOFTIRQ_DISABLE_OFFSET)
 			preempt_count_add(cnt);									//preempt_count 9-15bit加1
@@ -108,7 +108,7 @@ start_kernel()
 					do_softirq_own_stack()
 						__do_softirq()								//对于arm，softirq处理就是在当前的内核栈上执行
 							pending = local_softirq_pending();		//获取pending的标记
-							__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET)							//禁软中断，放置其他人有触发软中断
+							__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET)							//禁软中断，防止其他人有触发软中断(同时也意味着禁止调度)
 							set_softirq_pending(0);													//清楚pending标记
 							local_irq_enable()														// 888 使能本地中断，softirq可以被硬中断打断
 							...

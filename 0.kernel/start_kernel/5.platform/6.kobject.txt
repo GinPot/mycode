@@ -251,7 +251,8 @@ sys下：
 	late_initcall(of_fdt_raw_init);
 		sysfs_create_bin_file(firmware_kobj, &of_fdt_raw_attr)													//创建/sys/firmware/fdt文件,从保存uboot传过来的设备树的虚拟地址initial_boot_params读取信息给上层
 
-
+内核配置信息：
+	/proc/config.gz
 
 
 

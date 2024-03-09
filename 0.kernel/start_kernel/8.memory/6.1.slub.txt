@@ -1,6 +1,6 @@
 
 
-
+https://zhuanlan.zhihu.com/p/626883293
 
 
 
@@ -18,6 +18,13 @@ slub： 对slab重新设计了代码，设计思想一致，大小内存系统�
 
 #define ARCH_DMA_MINALIGN       (128)
 #define ARCH_KMALLOC_MINALIGN ARCH_DMA_MINALIGN
+#define KMALLOC_MIN_SIZE ARCH_DMA_MINALIGN
+
+#define KMALLOC_SHIFT_LOW ilog2(ARCH_DMA_MINALIGN)							//求以2为底x的对数，且向下取整; 2^7=128, KMALLOC_SHIFT_LOW=7
+
+#define PAGE_SHIFT 12
+#define KMALLOC_SHIFT_HIGH	(PAGE_SHIFT + 1)								// 12+1=13
+
 
 
 ifeq ($(CONFIG_KASAN_SW_TAGS), y)
@@ -31,25 +38,115 @@ endif
 
 
 mm_init()
-	static __initdata struct kmem_cache boot_kmem_cache, boot_kmem_cache_node;					//静态定义这两个结构体用于初始化早期的slub，初始化完成后会创建新的object给这两个结构体用，并回收这部分静态定义的内存
-	...
-	kmem_cache_node = &boot_kmem_cache_node;
-	kmem_cache = &boot_kmem_cache;
+	kmem_cache_init()
+		static __initdata struct kmem_cache boot_kmem_cache, boot_kmem_cache_node;					//静态定义这两个结构体用于初始化早期的slub，初始化完成后会创建新的object给这两个结构体用，并回收这部分静态定义的内存
+		...
+		kmem_cache_node = &boot_kmem_cache_node;
+		kmem_cache = &boot_kmem_cache;
 
-	create_boot_cache(kmem_cache_node, "kmem_cache_node", sizeof(struct kmem_cache_node), SLAB_HWCACHE_ALIGN, 0, 0);
-		...																						//填充kmem_cache结构体信息
-		s->align = calculate_alignment(flags, ARCH_KMALLOC_MINALIGN, size)						//设置内存对齐参数
-
-
-
-
-
-
-
-
-
-
-
+		create_boot_cache(kmem_cache_node, "kmem_cache_node", sizeof(struct kmem_cache_node), SLAB_HWCACHE_ALIGN, 0, 0);		//先创建boot_kmem_cache_node，因为kmem_cache依赖boot_kmem_cache_node
+			...																						//填充kmem_cache结构体信息
+			s->align = calculate_alignment(flags, ARCH_KMALLOC_MINALIGN, size)						//设置内存对齐参数,基本都是128
+																									//带有 SLAB_HWCACHE_ALIGN flag的，size不管是多大还是多小，基本都是以 (ARCH_KMALLOC_MINALIGN 或 cache line size最大的那个)对齐；尽可能使object成员使用时会被加载到同一个缓存行中
+																									//不带SLAB_HWCACHE_ALIGN flag时，一般是对于size较小的情况，防止因为对齐浪费填充对齐的空间； 但最小也会等于 ARCH_SLAB_MINALIGN
+				...
+				return ALIGN(align, sizeof(void *))													// align 的值等于它大于 sizeof(void*) 的最小倍数值，举个例子，在 32 位平台上，如果 align 为 10，sizeof(void*) 为 4，那么最终就向 12 字节对齐，如果 align 为 7，就向 8 字节对齐
+			...
+			err = __kmem_cache_create(s, flags)
+				kmem_cache_open(s, flags)
+					s->flags = kmem_cache_flags(s->size, flags, s->name, s->ctor)					//没有设置CONFIG_SLUB_DEBUG情况下位空
+					...
+					calculate_sizes(s, -1)															//计算kmem_cache结构体成员数据：inuse，size(object大小)，oo等；计算页框数
+						...
+						size = ALIGN(size, sizeof(void *))
+						s->inuse = size																//size第一次按照word(sizeof(void *))对齐后的大小
+						...
+						size = ALIGN(size, s->align)
+						s->size = size																//size第二次按照s->align大小对齐
+						...
+						order = calculate_order(size)												//计算页框数，浪费的空间要小于order/fraction,
+							min_objects = slub_min_objects											//cmdline中设置默认值，不设置则会0
+							if (!min_objects)
+								min_objects = 4 * (fls(nr_cpu_ids) + 1);							//fls是求取最高位的位置，即4核的话为fls(100B)=3，得到min_objects为16			
+							max_objects = order_objects(slub_max_order, size)						//在最大阶的页框数下2^3=8,8*4=32k,最多可以有几个objects
+							min_objects = min(min_objects, max_objects)								//取最小的object数
+						...																			//1,满足mini_object*size小于slub_max_order
+																									//2,1条件下浪费的空间不能超过1/16
+																									//3,1和2无法满足的情况下，逐步减少fraction，再不行就减少mini_object
+						s->oo = oo_make(order, size);												//oo的高位16bit是页框数,低16bit是页框数除以object大小，即可以容纳几个object
+						s->min = oo_make(get_order(size), size)										//设置最小min，只包含一个object大小；用于从伙伴系统申请不到内存的情况适用
+						...
+					set_min_partial(s, ilog2(s->size) / 2);											//设置 min_partial 大小
+					set_cpu_partial(s)																//设置 cpu_partial 大小
+					...
+					init_kmem_cache_nodes(s)
+						for_each_node_state(node, N_NORMAL_MEMORY)									//根据numa_id遍历节点
+							if (slab_state == DOWN)													//第一次进来的时候走到这下面
+								early_kmem_cache_node_alloc(node)
+									page = new_slab(kmem_cache_node, GFP_NOWAIT, node)				//向伙伴系统申请页框
+										allocate_slab(s, flags & (GFP_RECLAIM_MASK | GFP_CONSTRAINT_MASK), node)
+											...
+											page = alloc_slab_page(s, alloc_gfp, node, oo)
+												order = oo_order(oo)								//申请内存的大小阶
+												page = __alloc_pages_node(node, flags, order)
+													__alloc_pages(gfp_mask, order, nid)
+														__alloc_pages_nodemask(gfp_mask, order, preferred_nid, NULL)
+															...
+															prepare_alloc_pages(gfp_mask, order, preferred_nid, nodemask, &ac, &alloc_mask, &alloc_flags)
+															...参考6.0.mm_init.txt
+												if (unlikely(!page))
+													oo = s->min										//适用只包含一个object的size去向伙伴系统申请内存
+													alloc_gfp = flags
+													page = alloc_slab_page(s, alloc_gfp, node, oo)
+												page->objects = oo_objects(oo)						//设置object数量
+												page->slab_cache = s								// kmem_cache结构体与page关联
+												__SetPageSlab(page)									//将PG_slab标识设置到page的flag属性中表示内存页被slub管理
+												kasan_poison_slab(page)								//用0xFC填充slub中的内存，用于内核对内存访问越界检查
+												start = page_address(page)							//获取内存页对应的虚拟地址
+												shuffle = shuffle_freelist(s, page);				//配置CONFIG_SLAB_FREELIST_RANDOM 情况下会在slub的空闲对象中以随机的顺序初始化freelist链表
+												if (!shuffle)										//H5中没有使能，按照正常顺序来初始化freelist
+													start = fixup_red_left(s, start)				//slub 可能配置了 SLAB_RED_ZONE，这样会在 slub 对象内存空间两侧填充 red zone，防止内存访问越界;这里需要跳过 red zone 获取真正存放对象的内存地址
+													start = setup_object(s, page, start)			//填充对象的内存区域已经初始化空闲对象
+													page->freelist = start							//将用slub的第一个空闲对象作为freelist的头节点，放在page中
+													for (idx = 0, p = start; idx < page->objects - 1; idx++)		// 888 按照顺序循环初始化下个object的位置，参考 kmem_cache->offset
+														next = p + s->size							//去下一个对象的内存地址
+														next = setup_object(s, page, next)			//填充下一个对象的内存区域已经初始化
+														set_freepointer(s, p, next)
+															unsigned long freeptr_addr = (unsigned long)object + s->offset		//第一个对象保存下一个对象的地址
+															*(void **)freeptr_addr = next										//将下一个对应的地址保存在第一个对象中
+														p = next
+													set_freepointer(s, p, NULL)						//最后一个对应不保存下一个对象的地址
+												page->inuse = page->objects							//slub的初始化状态inuse的值为所有空闲对象个数
+												page->frozen = 1									//刚从伙伴系统申请的内存，需要放入cpu本地一级缓存中，只允许本地 cpu 从中分配对象
+												...
+												inc_slabs_node(s, page_to_nid(page), page->objects)	//跟新boot_kmem_cache_node结构体相关计数
+		...
+		create_boot_cache(kmem_cache, "kmem_cache", offsetof(struct kmem_cache, node) + nr_node_ids * sizeof(struct kmem_cache_node *), SLAB_HWCACHE_ALIGN, 0, 0)	//创建kmem_cache结构体用的object结构体
+		...
+		kmem_cache = bootstrap(&boot_kmem_cache)													//用slub申请kmem_cache和kmem_cache_node用的内存，在把之前静态定义的数据拷贝到新申请的内存中
+		kmem_cache_node = bootstrap(&boot_kmem_cache_node)
+		...
+		setup_kmalloc_cache_index_table()															// 默认 size_index 对应的index是和 kmalloc_info 对应的，但可能并没有用到所有 kmalloc_info 数组中所有的size，所以需要重新设置下index
+			for (i = 8; i < KMALLOC_MIN_SIZE; i += 8)												// size_index 只是查询1~192大小的index
+				...																					//实际上这个范围有关的只创建了128和256，所有只有两个档位
+				size_index[size_index_elem(i)] = KMALLOC_SHIFT_LOW
+			if (KMALLOC_MIN_SIZE >= 128)
+				for (i = 128 + 8; i <= 192; i += 8)
+					size_index[size_index_elem(i)] = 8
+		
+		
+		create_kmalloc_caches(0)																	//创建系统默认的kmem_cache结构体
+			for (type = KMALLOC_NORMAL; type <= KMALLOC_RECLAIM; type++)							//循环不同内存的类型
+				for (i = KMALLOC_SHIFT_LOW; i <= KMALLOC_SHIFT_HIGH; i++)							// 创建kmalloc_info数组的7到13对应的object
+					if (!kmalloc_caches[type][i])
+						new_kmalloc_cache(i, type, flags)
+							kmalloc_caches[type][idx] = create_kmalloc_cache(name, kmalloc_info[idx].size, flags, 0, kmalloc_info[idx].size)
+								struct kmem_cache *s = kmem_cache_zalloc(kmem_cache, GFP_NOWAIT)
+					if (KMALLOC_MIN_SIZE <= 32 && i == 6 && !kmalloc_caches[type][1])				// 看是否有必要创建大小为96和192大小的object；这两个size是内核常用的，减少slub的内存浪费
+						new_kmalloc_cache(1, type, flags)
+					if (KMALLOC_MIN_SIZE <= 64 && i == 7 && !kmalloc_caches[type][2])
+						new_kmalloc_cache(2, type, flags)
+	
 
 
 
@@ -62,36 +159,41 @@ mm_init()
 
 管理多个缓存块(slab)的结构体，创建时会设置其管理的缓存块(object)大小(该size需要经过2次对齐)；其中有3级缓存管理：
 
-object有8bytes、16bytes、32bytes、64bytes、…、8192bytes等大小；所有很多大小不同的kmem_cache结构体，每次申请内存时先根据需要申请的大小调用不同kmem_cache结构体进行分配，仍然存在object使用不充分情况；
+object有8bytes、16bytes、32bytes、64bytes、…、8192bytes等大小(ls /sys/kernel/slab/ 可以查看object size的类型)；所有很多大小不同的kmem_cache结构体，每次申请内存时先根据需要申请的大小调用不同kmem_cache结构体进行分配，仍然存在object使用不充分情况；
 如: 申请33字节时，将会分配64字节内存，浪费了31字节;(若存在33字节的kmem_cache将不会有浪费)
+
+cat /proc/slabinfo 查看object使用情况
 
 	申请内存：
 		1、刚创建kmem_cache结构体时，没有object可供分配，只能先从buddy申请一个slab给到一级缓存链表；
 		2、申请内存时，一级缓存链表有空间的object，则直接分配，更新相关链表跳过已经使用的object；
 		3、随着内存申请，一级缓存没有空闲object后：
-			3.1、这个时候二级、三级缓存应该都还没有object，需要等到一个没有空闲的slab释放除了object才会把这个slab先放入到二级缓存中，数量一定多后再放入到三级缓存中，又一定多后释放回给buddy
+			3.1、这个时候二级、三级缓存应该都还没有object，需要等到一个没有空闲的slab释放出了object才会把这个slab先放入到二级缓存中，数量一定多后再放入到三级缓存中，又一定多后释放回给buddy
 			3.2、若二级、三级缓存都没有可以用的object是，重新向buddy申请一个slab挂到一级缓存中，之前没有空闲的slab将不再有人管理；
 			3.3、若二级缓存有可用的object，则从二级缓存链表中取object分配；若二级没有，三级有可用的object，则从三级中分配；
 	释放内存：
 		1、object释放到一级缓存链表中直接释放更新链表就完事；
 		2、object释放到全是已经使用的slab中，则会将slab挂载到二级缓存中；或直接释放到二级缓存链表中
-			2.1、当二级缓存空闲的object数量超过 cpu_partial，将会把第二缓存所有的slab都移动到第三缓冲中；
+			2.1、当二级缓存空闲的object数量超过 https://www.baidu.com/link?url=wb5aa6fxG9bUnyp45_MYftUZwpoJpynNTQV-rsnbASteW3bMZYBDnqheIH9qhfXX4M7nNU-7JT3rmpLQTEleoENyrpHzh-96cG2--eE0eea&wd=&eqid=d1b0f225002d467d0000000265d83e4acpu_partial，将会把第二缓存所有的slab都移动到第三缓冲中；
 		3、object释放到三级缓存时，或者2.1情况；
-			3.1、级缓存空闲的object数量超过 min_partial，将会全空闲的slab释放到buddy中；
-	
-	
+			3.1、三级缓存空闲的object数量超过 min_partial，将会全空闲的slab释放到buddy中；
+
+
 struct kmem_cache {
 	struct kmem_cache_cpu __percpu *cpu_slab;
 	...
 	unsigned long min_partial;														//三级缓存空闲的object数量超过这个值时，将会全空闲的slab释放到buddy中；
 	unsigned int size;	/* The size of an object including metadata */				//object的大小，经过了两次对齐后的值
 	...
+	//既然每个object在没有分配之前不在乎每个object中存储的内容，那么完全可以在每个object中存储下
+	//一个object内存首地址，就形成了一个单链表。很巧妙的设计。那么这个地址数据存储在object什么位置
+	//呢？offset就是存储下个object地址数据相对于这个object首地址的偏移
 	unsigned int offset;	/* Free pointer offset */								//指针内置式的指针距离object首地址的偏移，偏移的地址保存下一个object的地址
 	...
 	unsigned int cpu_partial;														//二级缓存空闲的object数量超过这个值，将会把第二缓存所有的slab都移动到第三缓冲中；
 	struct kmem_cache_order_objects oo												//低16bit代表一个slab中所有的object数量(oo & ((1 << 16) - 1)), 高16bit代表一个slab管理的page数量； object不一定能被page数量整除，所以会有空余无法使用的空间
 	...
-	unsigned int inuse;		/* Offset to metadata */								//size第一次按照word对齐后的大小
+	unsigned int inuse;		/* Offset to metadata */								//size第一次按照word(sizeof(void *))对齐后的大小
 	unsigned int align;		/* Alignment */											//size第二次需要对齐的值
 	...
 	struct kmem_cache_node *node[MAX_NUMNODES];										//三级缓存，所有cpu共享；没有空闲的object将从buddy中申请一个缓存块(slab)，申请后将直接挂入一级缓存
@@ -103,3 +205,17 @@ struct kmem_cache_cpu {
 	struct page *partial;	/* Partially allocated frozen slabs */					//二级缓存，per-cpu链表管理；没有空闲的object将从三级缓存中分配
 };
 
+
+参考：
+	http://www.wowotech.net/memory_management/426.html
+	https://zhuanlan.zhihu.com/p/626883293
+
+
+
+kmalloc-8k  
+kmalloc-4k  
+kmalloc-2k  
+kmalloc-1k  
+kmalloc-512 
+kmalloc-256 
+kmalloc-128 
