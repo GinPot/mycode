@@ -18,7 +18,7 @@ memcg 全称memory cgroup，是cgroup 的一种
 内存回收， 主要对进程使用的内存(不活跃的内促)页进行回收：
 	1、进程堆、栈、数据端使用的匿名页： 回收存放到swap分区中(可以是一个分区，也可以是一个文件)；
 	2、进程匿名mmap共享内存使用的页： 回收存放到swap分区中；
-	3、进程shmem共享内存时使用的也：回收到swap分区中；
+	3、进程shmem共享内存时使用的页：回收到swap分区中；
 
 	4、进程对文件进行读写时使用的文件缓存页(加速对磁盘数据的访问)： (1)页数据与文件数据不一致，则写会到磁盘对应的文件再释放；(2)数据一致则直接释放；
 	5、进程对文件mmap映射时使用的页： 同上；
@@ -27,7 +27,7 @@ memcg 全称memory cgroup，是cgroup 的一种
 
 
 file_backed pages，有文件背景的页面，比如代码段、read/write方法读写的文件、mmap读写的文件等；他们有对应的硬盘文件，可直接和对应的硬盘文件进行交换；
-anonymous pages，匿名页，如stack、heap、cow后的数据段等；他们没有对应的硬盘文件，只能和虚拟内存(swapfile)或Linux的swap硬盘分区进行交换；系统内存不充分时被swap到swapfile或硬盘的swap分区。
+anonymous pages，匿名页，如stack、heap、cow后的数据段等；他们没有对应的硬盘文件，只能和虚拟内存(swapfile)或Linux的swap硬盘分区进行交换；系统内存不充分时被swap到swapfile或硬盘的swap分区。(swapfile和swap分区都是指swap，只是存储的方式有些许不同)
 
 proc/sys/vm/swappiness： 			值大是回收匿名多些，值小回收有 文件背景的多些
 手动触发内存碎片整理： 					echo 1 > /proc/sys/vm/compact_memory

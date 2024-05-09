@@ -24,7 +24,7 @@ API
 	2、将所有的pglist_data(每个NUMA)中所有的zone里面的 managed_pages 成员初始化为0，重新统计可用于伙伴系统管理的页框数；
 
 
-
+伙伴系统最大只能申请最高阶4M内存
 
 =================================================================================================
 
@@ -39,7 +39,7 @@ swiotlb:
 
 ================================================================================================================================================
 pageblock_order=9
-MAX_ORDER=11				最大阶是2^10个4K大小
+MAX_ORDER=11				最大阶是2^10个4K大小，即1024*4K=4M
 
 continue_merging: 		0~8
 
@@ -179,6 +179,9 @@ reserved内存：			get_num_physpages() - totalram_pages() - totalcma_pages
 #define HUGETLB_PAGE_ORDER	(HPAGE_SHIFT - PAGE_SHIFT)
 #define pageblock_order		HUGETLB_PAGE_ORDER			21 - 12 = 9
 
+参考4.setup_arch(memory)/4.8.0.bootmem_init(Sparse_memory).txt
+申请内存时先确认zone，然后是位阶，最后是迁移类型；
+内存不足时，先按照一定顺序检查其他迁移类型是否有足够的内存(备用类型中申请后，需要把申请后的内存移动到指定类型的链表中)；迁移类型不满足时将拆分位阶
 
 
 从伙伴系统中申请内存
@@ -208,7 +211,7 @@ _alloc_pages_nodemask是伙伴系统的心脏，处理实质的内存分配工�
 		1.3、若设置了ALLOC_HARDER或ALLOC_OOM，若其他迁移类型没有空闲页时，可以使用 MIGRATE_HIGHATOMIC 类型迁移页
 	2、不充足的情况会进行快速内存回收，再进行水位的判断；
 	4、快速申请内存；
-		5.1、申请0阶内存时，有限从PCP高速缓存链表中分配；PCP链表中没有空闲页时会先从伙伴系统中申请pcp->batch大小的内存再分配
+		5.1、申请0阶内存时，优先从PCP高速缓存链表中分配；PCP链表中没有空闲页时会先从伙伴系统中申请pcp->batch大小的内存再分配
 		5.2、若大于0阶，并设置了ALLOC_HARDER，则优选从MIGRATE_HIGHATOMIC 迁移类型申请页；没有设置的话就伙伴系统中申请就按照：1，指定迁移类型申请；2，CMA内存申请；3，备用类型中申请
 			5.2.1、若获取的是高阶内存，则先拆分，将拆分后的内存放回伙伴系统，留下靠前的内存分配出去
 			5.2.2、从备用类型中申请后，需要把申请后的内存移动到指定类型的链表中，数量达到pageblock时也需要设置对应的pageblock_flags
@@ -232,6 +235,9 @@ page = __alloc_pages_node(node, flags, order)
 	__alloc_pages(gfp_mask, order, nid)
 		__alloc_pages_nodemask(gfp_mask, order, preferred_nid, NULL)
 			unsigned int alloc_flags = ALLOC_WMARK_LOW;
+			...
+			if (unlikely(order >= MAX_ORDER)) 
+				return NULL																	//伙伴系统最大只能申请最高阶4M内存
 			...
 			prepare_alloc_pages(gfp_mask, order, preferred_nid, nodemask, &ac, &alloc_mask, &alloc_flags)
 				ac->high_zoneidx = gfp_zone(gfp_mask)										//gfp_zone()将传入的gfp_mask掩码转换为物理内存区域zone，返回这个物理内存区域是内存可分配区域的最高级内存区域，如果最高级内存区域不足以满足内存分配需求，则按照ZONE_HIGHMEM -> ZONE_NORMAL -> ZONE_DMA 的顺序依次降级

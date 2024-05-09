@@ -142,7 +142,7 @@ _GFP_xxx请求标志： buddy算法内部使用，申请内存的api不适用，
 #define __GFP_KSWAPD_RECLAIM	0x800u				//表示内存分配时剩余内存容量在低于WMARK_LOW，内核唤醒kswapd进程异步回收内存直到水位线高于WMARK_HIGH
 
 #define __GFP_WRITE				0x1000u				// 申请内存时设置该标志位表示文件系统申请分配一个页缓存页用于写文件？或是说明此次申请的物理页将会生成脏页
-#define __GFP_NOWARN			0x2000u				// 内核分配失败时，一直内核的分配失败错误打印
+#define __GFP_NOWARN			0x2000u				// 内核分配失败时，一直打印内核的分配失败错误
 #define __GFP_RETRY_MAYFAIL		0x4000u				//内存分配失败时运行重试，但重试仍可能失败，重试若干次后停止
 #define __GFP_NOFAIL			0x8000u				//内存分配失败时一直重试直到成功为止
 
@@ -237,7 +237,7 @@ WritebackTmp:          0 kB
 CommitLimit:      507508 kB
 Committed_AS:      40792 kB
 VmallocTotal:   135290159040 kB
-VmallocUsed:           0 kB					// ??? grep vmalloc /proc/vmallocinfo | awk '{total+=$2}; END {print total}' 得到Vmalloc使用了多少内存？
+VmallocUsed:           0 kB					// ???(已经被使用的虚拟地址空间大小) grep vmalloc /proc/vmallocinfo | awk '{total+=$2}; END {print total}' 得到Vmalloc使用了多少内存？
 VmallocChunk:          0 kB
 Percpu:              400 kB
 HardwareCorrupted:     0 kB					// 当系统检测到内存的硬件故障，会调用mm/memory-failure.c：memory_failure()函数把问题页面删除掉，不再使用，并统计到该参数中
@@ -300,8 +300,23 @@ VmFlags: rd ex mr mw me dw
 
 ================================================================================================
 
-
-
+cat /proc/PID/status 
+        "VmPeak:\t%8lu kB\n"------------------------------------虚拟内存使用量的峰值，取mm->total_vm和mm->hiwater_vm的大值。
+        "VmSize:\t%8lu kB\n"------------------------------------当前虚拟内存的实际使用量。													vmalloc申请了就会分配
+        "VmLck:\t%8lu kB\n"-------------------------------------PG_mlocked属性的页面总量，常被mlock()置位。
+        "VmPin:\t%8lu kB\n"-------------------------------------不可被移动的Pined Memory内存大小。
+        "VmHWM:\t%8lu kB\n"-------------------------------------HWM是High Water Mark的意思，表示rss的峰值。
+        "VmRSS:\t%8lu kB\n"-------------------------------------应用程序实际占用的物理内存大小，这里和VmSize有区别。VmRss要小于等于VmSize。		实际使用物理内存，包括共享库; vmalloc不会立即分配，访问了才会分配
+        "RssAnon:\t%8lu kB\n"-----------------------------------匿名RSS内存大小。															堆也属于匿名内存
+        "RssFile:\t%8lu kB\n"-----------------------------------文件RSS内存大小。
+        "RssShmem:\t%8lu kB\n"----------------------------------共享内存RSS内存大小。
+        "VmData:\t%8lu kB\n"------------------------------------程序数据段的所占虚拟内存大小，存放了初始化了的数据。
+        "VmStk:\t%8lu kB\n"-------------------------------------进程在用户态的栈大小。
+        "VmExe:\t%8lu kB\n"-------------------------------------进程主程序代码段内存使用量，即text段大小。
+        "VmLib:\t%8lu kB\n"-------------------------------------进程共享库内存使用量。
+        "VmPTE:\t%8lu kB\n"-------------------------------------进程页表项Page Table Entries内存使用量。
+        "VmPMD:\t%8lu kB\n"-------------------------------------进程PMD内存使用量。
+        "VmSwap:\t%8lu kB\n",-----------------------------------进程swap使用量。
 
 
 

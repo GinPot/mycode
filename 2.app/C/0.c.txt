@@ -1,6 +1,7 @@
 #define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
 	定义一个带volatile的x的类型类型的指针&(x),使得每次都从内存中存取x地址的数据，且告诉编译器不要进行优化或重排
 
+(*(volatile unsigned int *)&(addr))
 
 typeof: 取得变量的类型;
 	如下代码，定义一个和变量x相同类型的临时变量_max1，定义一个和变量y相同类型的临时变量_max2，再判断两者类型是否一致，不一致给出一个警告，最后比较两者。

@@ -1,0 +1,134 @@
+1、优先从绑定dev的内存中申请
+2、再从系统的cma中申请
+3、最后从伙伴系统中申请，以上2种申请大小取决于内存池大小，第三种最大4M
+4、申请虚拟地址建立没有cache的映射，获取物理地址
+
+
+最终是否不带cache，或者申请的内存是否是连续的物理内存，都将有soc特性决定(是否硬件自动维护设备和cache的一致性，是否带有IOMMU)
+
+
+1)使用 command line 方式：cma=nn[MG]@[start[MG][-end[MG]]]	//在4.5.arm64_memblock_init(cma).txt中解析
+	cma=nn[MG]：用来指定 CMA 区域大小
+	@[start[MG][-end[MG]]]：用来指定可创建 CMA 区域的地址范围
+	例如：cma=64M@0x00000000-0x20000000
+
+2)设备树中设置												//在4.5.arm64_memblock_init(cma).txt中解析
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		linux,cma {
+			compatible = "shared-dma-pool";
+			reusable;										//操作系统的其他用途也可以用这块内存，但当dma需要时，其他的内存需要迁移出去
+			reg = <0x60000000 0x10000000>;
+			linux,cma-default;								//linux将使用该区域作为连续内存分配器的默认池
+		};
+	};
+
+
+
+
+
+
+
+
+
+
+
+of_reserved_mem_device_init(&pdev->dev)																	//设置dev绑定的dma内存池
+	of_reserved_mem_device_init_by_idx(dev, dev->of_node, 0)
+		...
+		target = of_parse_phandle(np, "memory-region", idx)
+		rmem = __find_rmem(target)																		//找到该dev的设备树节点，并转换为reserved_mem结构体数据
+		...
+		rmem->ops->device_init(rmem, dev) => rmem_dma_device_init(rmem, dev)
+			...
+			dma_init_coherent_memory(rmem->base, rmem->base, rmem->size, &mem)
+				...
+				int pages = size >> PAGE_SHIFT															//如分配的这块内存有0x1000000,对应有0x1000个页框
+				int bitmap_size = BITS_TO_LONGS(pages) * sizeof(long)									//0x1000(4096)个页框对应4096个bit,4096/8=512字节保存页框对应的bitmap
+				...
+				mem_base = memremap(phys_addr, size, MEMREMAP_WC)										//建立没有cache的映射
+				...
+				dma_mem->bitmap = kzalloc(bitmap_size, GFP_KERNEL)										//申请bitmap所需的内存
+				...
+				dma_mem->virt_base = mem_base;															//初始化其他成员
+				dma_mem->device_base = device_addr;
+				dma_mem->pfn_base = PFN_DOWN(phys_addr);
+				dma_mem->size = pages;
+			...
+			dma_assign_coherent_memory(dev, mem)
+				dev->dma_mem = mem																		// 和设备绑定
+
+
+
+
+
+
+
+vaddr = dma_alloc_coherent(&pdev->dev, 200*1024*1024, &addr, GFP_KERNEL);
+	dma_alloc_attrs(dev, size, dma_handle, gfp, (gfp & __GFP_NOWARN) ? DMA_ATTR_NO_WARN : 0)
+		...
+		dma_alloc_from_dev_coherent(dev, size, dma_handle, &cpu_addr)									//若存在和dev绑定的内存池dev->dma_mem，则优先使用绑定的内存池
+			struct dma_coherent_mem *mem = dev_get_coherent_memory(dev)
+			__dma_alloc_from_coherent(mem, size, dma_handle)
+				...
+				pageno = bitmap_find_free_region(mem->bitmap, mem->size, order)							//根据size找到空闲的bitmap位
+				...
+				*dma_handle = mem->device_base + (pageno << PAGE_SHIFT)									//取对应的物理地址、虚拟地址、清零
+				mem->virt_base + (pageno << PAGE_SHIFT)
+				memset(mem->virt_base, 0, size)
+		...
+		if (dma_is_direct(ops))																			//若不存在dev->dma_ops，则进入if
+			cpu_addr = dma_direct_alloc(dev, size, dma_handle, flag, attrs)								//一般没有绑定dev内存池的情况都在这
+				if (!dev_is_dma_coherent(dev))															//若不存在dev->dma_coherent，则进入if
+					return arch_dma_alloc(dev, size, dma_handle, gfp, attrs)							//一般会走到这
+						page = __dma_direct_alloc_pages(dev, size, dma_handle, flags, attrs)
+							...
+							gfp |= __dma_direct_optimal_gfp_mask(dev, dev->coherent_dma_mask, &phys_mask)
+								...
+								if (*phys_mask <= DMA_BIT_MASK(ARCH_ZONE_DMA_BITS))
+									return GFP_DMA;
+								if (*phys_mask <= DMA_BIT_MASK(32))
+									return GFP_DMA32;
+							...
+							page = dma_alloc_from_contiguous(dev, count, page_order, gfp & __GFP_NOWARN);	// GFP参数作用不大
+								cma_alloc(dev_get_cma_area(dev), count, align, no_warn)					//一般从 dma_contiguous_default_area cma中申请,在4.setup_arch(memory)/4.5.arm64_memblock_init(cma).txt中设置了该cma
+									...
+									bitmap_no = bitmap_find_next_zero_area_off(cma->bitmap,		//在bitmap中查找满足分配的内存区域
+												bitmap_maxno, start, bitmap_count, mask,
+												offset)
+									bitmap_set(cma->bitmap, bitmap_no, bitmap_count)			//将相应的bitmap位设1
+										...
+										alloc_contig_range(pfn, pfn + count, MIGRATE_CMA,		// 888
+												GFP_KERNEL | (no_warn ? __GFP_NOWARN : 0))
+												start_isolate_page_range(pfn_max_align_down(start),
+												pfn_max_align_up(end), migratetype, 0)
+											...
+											start_isolate_page_range(pfn_max_align_down(start),		//将涉及分配区域的pageblock迁移类型更改为MIGRATE_ISOLATE
+												pfn_max_align_up(end), migratetype, 0)
+											...
+											__alloc_contig_migrate_range(&cc, start, end)			//将分配内存范围内的已经使用的页面迁移出来
+											...
+											isolate_freepages_range(&cc, outer_start, end)			//将需要使用的页面从buddy系统中共摘取出来
+							...
+							if (!page)
+								page = alloc_pages_node(dev_to_node(dev), gfp, page_order);			//没有从cma中申请到内存的情况下，会尝试从伙伴系统中申请，这时候GFP参数将影响申请的zone		
+						...
+						arch_dma_prep_coherent(page, size)											//清除这段内存的cache
+						ret = dma_common_contiguous_remap(page, size, VM_USERMAP,					//建立没有cache的映射，返回重新申请可用的虚拟地址
+							arch_dma_mmap_pgprot(dev, PAGE_KERNEL, attrs),							// ==> MT_NORMAL_NC
+							__builtin_return_address(0))
+						...
+						*dma_handle = phys_to_dma(dev, page_to_phys(page));							//获取物理地址
+
+
+
+
+
+
+
+
+
+core_initcall(cma_init_reserved_areas);					//将cma区域添加到buddy中，并会初始化bitmap

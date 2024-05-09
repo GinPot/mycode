@@ -77,7 +77,7 @@ static int irq_test_probe(struct platform_device *pdev)
 	}
 
 /*********************************************************/
-//	irqdata = of_device_get_match_data(&pdev->dev);
+//	irqdata = of_device_get_match_data(&pdev->dev);						//of_match_node(rockchip_pinctrl_dt_match, node)，通过第二个参数设备树节点信息从 platform_device_id 数组找到对应匹配的.data信息
 //	if (!irqdata){
 //		dev_err(&pdev->dev, "%s: get platform data fail\n", __func__);
 //		return -EINVAL;

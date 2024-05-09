@@ -1,0 +1,58 @@
+static const struct dma_buf_ops exp_dmabuf_ops = {
+	.attach = ion_attach,						//kernel空间通过dma_buf_attach()接口调用到这，用于建立dma-buf与device的连接关系，该关系由系统自动连接，ion_attach()中不要实现什么
+													//这个连接关系被存放在薪创建的dma_buf_attachment，供后续调用 dma_buf_map_attachment()使用
+	.detach = ion_detach,
+
+	//1、主要是整合离散的buffer，生成sg_table; 2、同步cache，主要是通过使用流式DMA映射接口来完成cache同步：
+		//dma_map_single() / dma_unmap_single()
+		//dma_map_page() / dma_unmap_page()
+		//dma_map_sg() / dma_unmap_sg()
+	.map_dma_buf = ion_map_dma_buf,				//kernel空间通过dma_buf_map_attachment接口调用到这获取sg_table结构体
+	.unmap_dma_buf = ion_unmap_dma_buf,
+
+
+	.map = ion_kmap,							//kernel空间通过dma_buf_kmap()接口调用到这，主要是把实际的物理内存，映射到kernel空间，返回cpu可以访问的连续虚拟地址; 
+													//实现过程主要调用linux提供的 kmap()接口：一次只能映射1个page，可能会睡眠，只能在进程上下文中调用
+	.unmap = ion_kunmap,
+
+
+	.map_atomic = ion_kmap_atomic,				//kernel空间通过dma_buf_kmap_atomic()接口调用到这，主要是把实际的物理内存，映射到kernel空间，返回cpu可以访问的连续虚拟地址;
+													//实现过程主要调用linux提供的 kmap_atomic()接口：一次只能映射1个page，不会睡眠，可在中断上下文中调用； 该函数在linux4.19开始不再被支持
+	.unmap_atomic = ion_kunmap_atomic,
+
+
+	.vmap = ion_vmap,							//kernel空间通过dma_buf_vmap()接口调用到这，主要是把实际的物理内存，映射到kernel空间，返回cpu可以访问的连续虚拟地址; 
+													//实现过程主要调用linux提供的 vmap()/vm_map_ram()接口：一次可以映射多个pages，且这些pages物理上可以不连续，只能在进程上下文中调用
+	.vunmap = ion_vunmap,
+
+
+	.mmap = ion_mmap,							// 通过remap_pfn_range() map内存到用户空间，使用户空间可以访问ION的内存
+	.release = ion_release,						//主要是kfree释放申请的ION内存
+
+	//流式DMA接口映射后若CPU需要访问ION内存，需要用下面接口同步或清除cache；如内核空间需要调用dma_buf_kmap()/dma_buf_kmap_atomic()访问ION内存之前就需要调用下面接口
+	.begin_cpu_access = ion_begin_cpu_access,	//kernel空间通过dma_buf_begin_cpu_access()接口调用到这
+	.end_cpu_access = ion_end_cpu_access,
+};
+
+
+
+
+fd = dma_buf_fd(dmabuf);						//通过dma_buf结构体申请新的fd
+dmabuf = dma_buf_get(fd);						//由fd找到对应的dma_buf结构体
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

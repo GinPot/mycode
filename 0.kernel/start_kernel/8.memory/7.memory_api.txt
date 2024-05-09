@@ -1,0 +1,266 @@
+寄存器访问
+指定no-map内存访问
+指定dev的dma访问			of_reserved_mem_device_init 来将reserved memory分配给特定的device.  device_init(rmem, dev)rmem_dma_device_init
+全局的dma访问
+
+
+
+__get_free_pages
+alloc_bootmem
+
+
+
+
+
+
+alloc_page(GFP_KERNEL)		//申请单个页框
+alloc_pages(gfp_mask, order)//申请多个页框
+dma_alloc_coherent			//dma相关内存申请
+
+
+
+
+
+
+
+kmem_cache_alloc：
+	通过指定kmem_cache结构体的object去申请对应object大小的内存
+
+kmalloc ：分配内核内存，保证分配的内存在物理上是连续的，与真实地址只有一个偏差，最大4M，可以用于DMA访问(需要no cache下)，不进行初始化，内存不足时也会进入睡眠。         				kfree()释放;
+	1、适合申请内存小于4K的情况
+	2、申请到连续的物理内存后直接获取PAGE_OFFSET内存线性映射的虚拟地址使用，速度比较快；出于性能考虑多用于内核使用
+	3、GFP_KERNEL | 最常用，可能睡眠。一般用于进程上下文中
+	  GFP_ATOMIC | 不可睡眠，可用于中断上下文或其他不可睡眠场景。可能使用紧急内存（min 水线以下内存）
+
+vmalloc ：分配虚拟内核内存，保证在虚拟地址上是连续的(在物理地址上可能不连续)，比kmalloc慢，可能睡眠,申请大小没有限制						   			vfree()释放;
+	1、通过伙伴系统一个页框一个页框的申请，适合申请size大于4K的内存
+	2、先申请空闲的虚拟地址，再申请物理地址，最后进行映射，速度比较慢
+	3、离散的物理内存也容易造成caceh抖动？
+	4、内存不足时，申请过程中会进行直接内存回收，可能会进入睡眠
+
+malloc：分配用户内存，free释放
+	1、当开辟的空间小于 128K 时，调用 brk（）函数，malloc 的底层实现是系统调用函数 brk（），其主要移动指针 _enddata(此时的 _enddata 指的是 Linux 地址空间中堆段的末尾地址，不是数据段的末尾地址)
+	2、当开辟的空间大于 128K 时，mmap（）系统调用函数来在虚拟地址空间中（堆和栈中间，称为“文件映射区域”的地方）找一块空间来开辟
+	https://www.cnblogs.com/ssezhangpeng/p/10808969.html
+
+ioremap：
+	1、类似vmalloc，先申请虚拟地址，再和指定的io物理地址进行映射
+
+===================================================================================================================
+
+指定kmem_cache结构体的方式申请内存
+size即对应结构体object的大小
+
+struct kmem_cache *s = kmem_cache_zalloc(kmem_cache, GFP_NOWAIT)
+	kmem_cache_alloc(kmem_cache, GFP_NOWAIT | __GFP_ZERO)
+		slab_alloc(kmem_cache, GFP_NOWAIT | __GFP_ZERO, _RET_IP_)
+			slab_alloc_node(kmem_cache, GFP_NOWAIT | __GFP_ZERO, NUMA_NO_NODE, _RET_IP_)
+
+
+
+
+
+===================================================================================================================
+kzalloc，最大申请4M
+	1、申请内存超过8K直接通过伙伴系统申请，小于等于时则通过slub申请
+	2、只会从kmalloc_info创建的结构体中找适合的cache size
+
+
+
+#define PAGE_SHIFT 12
+#define KMALLOC_SHIFT_HIGH	(PAGE_SHIFT + 1)
+#define KMALLOC_MAX_CACHE_SIZE	(1UL << KMALLOC_SHIFT_HIGH)						//8192(8k)
+
+#define ARCH_DMA_MINALIGN	(128)
+#define KMALLOC_MIN_SIZE ARCH_DMA_MINALIGN
+
+
+void *kzalloc(size_t size, gfp_t flags)
+	return kmalloc(size, flags | __GFP_ZERO)
+
+
+void *kmalloc(size_t size, gfp_t flags)											//常用于申请小于页框(4K)大小的内存
+	if (__builtin_constant_p(size))												//GCC内建函数，确定传入的size是否是个确定的实数而不是变量，固定的值的话进入if
+		if (size > KMALLOC_MAX_CACHE_SIZE)										//当size大于8K时，直接调用伙伴系统接口申请内存；  因为系统slub默认预留最大的object就是8K,大于8K的话就默认没有对应的slub为他服务
+			return kmalloc_large(size, flags)
+	return __kmalloc(size, flags)
+		if (unlikely(size > KMALLOC_MAX_CACHE_SIZE))							//同上
+			return kmalloc_large(size, flags)
+		s = kmalloc_slab(size, flags)
+			if (size <= 192)
+				index = size_index[size_index_elem(size)]						// size小于等于192时，通过size_index找到对应的object数组
+			else
+				index = fls(size - 1)											// 否组，直接获取zise对应的最高位是哪个bit来找object数组；如 fls(0)=0，fls(1)=1，fls(4) = 3
+			return kmalloc_caches[kmalloc_type(flags)][index]					// 返回用哪个object size结构体；flags没有指定一般内存来着ZONE_NORMAL ，指定了__GFP_DMA则来着ZONE_DMA ， 指定了__GFP_RECLAIMABLE，则申请的内存可以被回收
+		ret = slab_alloc(s, flags, _RET_IP_)									// 向slub申请内存
+			return slab_alloc_node(s, gfpflags, NUMA_NO_NODE, addr)
+				return slab_alloc_node(s, gfpflags, NUMA_NO_NODE, addr)
+
+
+
+
+
+
+===================================================================================================================
+
+
+
+
+#define VMALLOC_START			(MODULES_END)													0xffff000010000000			arch\arm64\include\asm\pgtable-hwdef.h
+#define VMALLOC_END				(PAGE_OFFSET - PUD_SIZE - VMEMMAP_SIZE - SZ_64K)				0xffff7dffbfff0000
+
+
+
+
+void *vmalloc(unsigned long size)
+	__vmalloc_node_flags(size, NUMA_NO_NODE, GFP_KERNEL)
+		__vmalloc_node(size, 1(align), GFP_KERNEL(gfp_mask), PAGE_KERNEL(prot), NUMA_NO_NODE(node), __builtin_return_address(0)(caller))
+			__vmalloc_node_range(size, align, VMALLOC_START, VMALLOC_END, gfp_mask, prot, 0, node, caller)
+				struct vm_struct *area
+				...
+				size = PAGE_ALIGN(size)											//页大小对齐
+				if (!size || (size >> PAGE_SHIFT) > totalram_pages())			//size为0或者大于总内存直接返回失败
+				area = __get_vm_area_node(size, align, VM_ALLOC | VM_UNINITIALIZED | vm_flags, start, end, node, gfp_mask, caller)		//在slub中分配vm_struc、vmap_area数据结构体，并申请可用的虚拟地址
+					struct vmap_area *va
+					truct vm_struct *area
+					...
+					area = kzalloc_node(sizeof(*area), gfp_mask & GFP_RECLAIM_MASK, node)						//通过kmalloc，向slub申请 vmap_area 大小内存
+					if (!(flags & VM_NO_GUARD))																	//如果没有标记，size要多算一个guard page用于分隔
+						size += PAGE_SIZE
+					va = alloc_vmap_area(size, align, start, end, node, gfp_mask)								//申请指定虚拟地址范围内的未映射的空白虚拟地址
+						...
+						BUG_ON(!size)																			//大小不能为0
+						BUG_ON(offset_in_page(size))															//大小一定要是页框的整数倍
+						BUG_ON(!is_power_of_2(align))															//对齐大小一定是2的n次方
+						...
+						va = kmem_cache_alloc_node(vmap_area_cachep, gfp_mask & GFP_RECLAIM_MASK, node)			//通过指定 object cache向slub申请内存
+							slab_alloc_node(s, gfpflags, node, _RET_IP_)
+						...
+						addr = __alloc_vmap_area(size, align, vstart, vend, node)								// 888 申请可用的虚拟地址
+						if (unlikely(addr == vend))
+							goto overflow
+						va->va_start = addr
+						va->va_end = addr + size
+						va->flags = 0
+						insert_vmap_area(va, &vmap_area_root, &vmap_area_list)									//插入到红黑树和链表中
+
+overflow:
+						if (!purged)																			//运行到这说明虚拟空间不足
+							purge_vmap_area_lazy();																//清理懒模式下没有及时释放的KVA空间,再retry一次
+							purged = 1;
+							goto retry;
+
+				addr = __vmalloc_area_node(area, gfp_mask, prot, node)											//申请物理地址，建立页表映射
+					...
+					area->nr_pages = nr_pages = get_vm_area_size(area) >> PAGE_SHIFT												//计算本次内存申请的页框数
+					array_size = (nr_pages * sizeof(struct page *))												//计算需要多少个struct page结构体大小
+					if (array_size > PAGE_SIZE) {																//需要申请struct page大小大于一页，用vmalloc申请
+						pages = __vmalloc_node(array_size, 1, nested_gfp|highmem_mask, PAGE_KERNEL, node, area->caller);
+					} else {																					//小于的话就用kmalloc申请
+						pages = kmalloc_node(array_size, nested_gfp, node);
+					}
+					area->pages = pages
+					...
+					for (i = 0; i < area->nr_pages; i++)														//循环一个个页通过伙伴系统申请一个页框
+						page = alloc_pages_node(node, alloc_mask|highmem_mask, 0)
+						area->pages[i] = page
+					/* 物理内存申请成功后，进行内存映射.
+					 * vmap_page_range_noflush: 建立映射；
+					 * set_pte_at(&init_mm, addr, pte, mk_pte(page, prot)): 将页描述符对应的页框和页表项进行关联，映射关系被建立
+					 * flush_cache_vmap：刷新缓存；
+					 */
+					if (map_vm_area(area, prot, pages))
+
+===============================
+
+mm_init()
+	vmalloc_init()
+		struct vmap_area *va
+		...
+		vmap_area_cachep = KMEM_CACHE(vmap_area, SLAB_PANIC)										//创建 sizeof(vmap_area) cache大小的object
+		for_each_possible_cpu(i)																	//遍历每CPU的vmap_block_queue和vfree_deferred变量并进行初始化
+			struct vmap_block_queue *vbq															//非连续内存块队列管理结构，主要是队列以及对应的保护锁
+			struct vfree_deferred *p;																//是vmalloc内存延迟释放管理
+			...
+		for (tmp = vmlist; tmp; tmp = tmp->next)													//将挂接再vmlist链表的各项 vmap_area 输出到非连续内存块的管理中
+
+
+
+===============================
+
+
+struct vm_struct {						每次vmalloc申请时都会创建
+	struct vm_struct	*next;
+	void			*addr;				//建立页表映射后的虚拟地址
+	unsigned long		size;
+	unsigned long		flags;
+	struct page		**pages;			//用来保存申请到的一个个的页框
+	unsigned int		nr_pages;		//申请内存的页框数量
+	phys_addr_t		phys_addr;
+	const void		*caller;
+};
+
+struct vmap_area {						//包含 vm_struct ，保存根据size分配可以用的虚拟地址
+	unsigned long va_start;				//起始虚拟地址
+	unsigned long va_end;				//虚拟地址结束
+
+	unsigned long subtree_max_size;
+	unsigned long flags;
+	struct rb_node rb_node;         /* address sorted rbtree */
+	struct list_head list;          /* address sorted list */
+	struct llist_node purge_list;    /* "lazy purge" list */
+	struct vm_struct *vm;
+};
+
+===================================================================================================================
+
+
+#define ioremap(addr, size)		
+	__ioremap((addr), (size), __pgprot(PROT_DEVICE_nGnRE))
+		__ioremap_caller(phys_addr, size, prot, __builtin_return_address(0))
+			struct vm_struct *area
+			...
+			area = get_vm_area_caller(size, VM_IOREMAP, caller)
+				__get_vm_area_node(size, 1, flags, VMALLOC_START, VMALLOC_END, NUMA_NO_NODE, GFP_KERNEL, caller)		//在slub中分配vm_struc、vmap_area数据结构体，并申请可用的虚拟地址
+			...
+			addr = (unsigned long)area->addr
+			area->phys_addr = phys_addr
+			ioremap_page_range(addr, addr + size, phys_addr, prot)														//指定的io地址映射到vmalloc虚拟地址上
+			...
+			return (void __iomem *)(offset + addr)																		//返回对应的虚拟地址
+
+
+#define request_mem_region(start,n,name) 																				//声明所用的内存，检查范围是之前声明过的内存，没有声明过的可能检查不到，多用于寄存器的申请，申明后再ioremap
+	__request_region(&iomem_resource, (start), (n), (name), 0)
+
+
+
+
+
+
+
+MT_DEVICE_nGnRnE	 		代表是设备内存，必须保证严格按照代码中的访问顺序来，不允许合并对内存的访问，不允许对指令重排，写操作的ack必须来自最终的目的地而不是中间的write buffer
+MT_DEVICE_nGnRE		 		必须保证严格按照代码中的访问顺序来，不允许合并对内存的访问，不允许对指令重排，但是写操作的ack不必须来自最终的目的地而是中间的write buffer
+MT_DEVICE_nGRE		 		是不能对内存访问合并，但是指令可以重排，ack不必须来自最终的目的地
+MT_DEVICE_GRE 				是对内存访问可以合并，指令可以重排，ack不必须来自最终的目的地
+MT_NORMAL_NC         		non-cached系统内存，cpu直接进行内存读写，不经过缓存;
+MT_NORMAL        			可缓存的系统内存(采用write back机制，只写入cache，不马上更新内存，留待适当时机更新内存)
+MT_NORMAL_WT 				带write-through的系统内存,同时写cache和内存。
+
+
+===================================================================================================================
+
+
+
+static inline void *devm_kzalloc(struct device *dev, size_t size, gfp_t gfp)											//./include/linux/device.h
+	devm_kmalloc(dev, size, gfp | __GFP_ZERO)
+		dr = alloc_dr(devm_kmalloc_release, size, gfp, dev_to_node(dev))
+			dr = kmalloc_node_track_caller(tot_size, gfp, nid)
+				__kmalloc_node_track_caller(size, flags, node, _RET_IP_)
+					if (unlikely(size > KMALLOC_MAX_CACHE_SIZE))
+						ret = kmalloc_large_node(size, gfpflags, node)
+					s = kmalloc_slab(size, gfpflags)
+					ret = slab_alloc_node(s, gfpflags, node, caller)
+
+===================================================================================================================
+

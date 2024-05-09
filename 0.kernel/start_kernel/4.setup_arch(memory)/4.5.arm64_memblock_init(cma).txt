@@ -130,14 +130,51 @@ arm64_memblock_init();
 	high_memory = __va(memblock_end_of_DRAM() - 1) + 1;								// high_memory ？
 
 	dma_contiguous_reserve(arm64_dma_phys_limit)									// 1、设置系统默认cma内存，并设置为reserved memblock；  内存信息从启动参数中获取，或者defconfig中设置size(默认32M)，由memblock alloc去申请
-		cma_declare_contiguous(base, size, limit, 0, 0, fixed, "reserved", res_cma)	// 2、若设备树中有compatible = "shared-dma-pool"节点信息，并且设置了linux,cma-default属性，则用设备树中的内存信息设置为默认的cma内存，并设置为reserved memblock；
-			...
-			if (fixed)
-				memblock_reserve(base, size)										// cmdline中设置的话就直接设置memblock_reserve
-			...
-			addr = memblock_phys_alloc_range(size, alignment, highmem_start, limit)	// defconfig默认配置cma的情况下从memblock高地址开始取，取完后设置memblock_reserve
-			if (!addr)
-				addr = memblock_phys_alloc_range(size, alignment, base, limit)		// 上面失败的情况下从低位地址开始取，取完后设置memblock_reserve
+		...
+		if (selected_size && !dma_contiguous_default_area)							//如果没有设置默认的cma区域，则通过cmdline或者用memblock申请默认大小的cma区域
+			dma_contiguous_reserve_area(selected_size, selected_base, selected_limit, &dma_contiguous_default_area, fixed)
+				cma_declare_contiguous(base, size, limit, 0, 0, fixed, "reserved", res_cma)	// 2、若设备树中有compatible = "shared-dma-pool"节点信息，并且设置了linux,cma-default属性，则用设备树中的内存信息设置为默认的cma内存，并设置为reserved memblock；
+						...
+						if (fixed)
+							memblock_reserve(base, size)										// cmdline中设置的话就直接设置memblock_reserve
+						else
+							addr = memblock_phys_alloc_range(size, alignment, highmem_start, limit)	// defconfig默认配置cma的情况下从memblock高地址开始取，取完后设置memblock_reserve
+							if (!addr)
+								addr = memblock_phys_alloc_range(size, alignment, base, limit)		// 上面失败的情况下从低位地址开始取，取完后设置memblock_reserve
+						cma_init_reserved_mem(base, size, order_per_bit, name, res_cma)
+		
+/*****************************************************************************************************************************************/
+
+#define CONFIG_CMA_AREAS 7
+#define MAX_CMA_AREAS	(1 + CONFIG_CMA_AREAS)
+struct cma cma_areas[MAX_CMA_AREAS];												//最多只能设置8块cma区域
+
+
+
+RESERVEDMEM_OF_DECLARE(cma, "shared-dma-pool", rmem_cma_setup);						//解析cma节点，通过 __reserved_mem_init_node(rmem)函数触发
+	...
+	if (!of_get_flat_dt_prop(node, "reusable", NULL) || of_get_flat_dt_prop(node, "no-map", NULL))
+		return -EINVAL;
+	...
+	cma_init_reserved_mem(rmem->base, rmem->size, 0, rmem->name, &cma)				//主要讲节点信息初始化到cma结构体中
+		...
+		if (!size || !memblock_is_region_reserved(base, size))						//需要确认cma内存已在在memblock reserved中
+		...
+		cma->base_pfn = PFN_DOWN(base);
+		cma->count = size >> PAGE_SHIFT;
+		cma->order_per_bit = order_per_bit;
+		*res_cma = cma;
+		cma_area_count++;
+		totalcma_pages += (size / PAGE_SIZE);
+
+	if (of_get_flat_dt_prop(node, "linux,cma-default", NULL))						//若设置了"linux,cma-default"，将这个cma设置为全局默认用的cma区域
+		dma_contiguous_set_default(cma)
+			dma_contiguous_default_area = cma										// ../8.memory/8.memory_dma.txt 中申请dma内存时将会使用
+
+
+
+
+
 
 /*****************************************************************************************************************************************/
 

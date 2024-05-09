@@ -1,3 +1,9 @@
+ASLR(Address Space Layout Randomization)： 内存空间布局随机化
+KASAN_SHADOW： 动态检测内存错误的工具
+
+
+
+
 1、虚拟地址各段的功能分配;
 2、内核镜像物理地址对应的虚拟地址映射FIX_PTE,FIX_PMD,FIX_PUD,FIX_PGD;
 3、早期ioremap从 FIXADDR 中取虚拟地址和物理地址映射;

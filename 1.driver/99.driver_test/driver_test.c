@@ -141,9 +141,9 @@ static int DriverTestMmap(struct file *file, struct vm_area_struct *vma)
 	int ret;
 	
 	pr_notice("data: 0x%2x 0x%2x 0x%2x 0x%2x 0x%2x 0x%2x 0x%2x 0x%2x 0x%2x 0x%2x", mmapbuf[0],mmapbuf[1],mmapbuf[2],mmapbuf[3],mmapbuf[4],mmapbuf[5],mmapbuf[6],mmapbuf[7],mmapbuf[8],mmapbuf[9]);
-	pr_notice("vma->vm_start: 0x%08lx    len:%lu\n", vma->vm_start, vma->vm_end - vma->vm_start);
+	pr_notice("vma->vm_start: 0x%08lx    len:%lu\n", vma->vm_start, vma->vm_end - vma->vm_start);		//vma->vm_start 该值用户层设置NULL时，走到这已经被系统自动设置申请的一段虚拟地址，
 	
-	//vma->vm_start用户称不指定的话则系统自己选择虚拟地址，vma->vm_end - vma->vm_start，大小由用户空间指定,需要大于4K， 物理地址因需要右移一页大小，所以物理地址需要大于4K
+	// 为用户空间页表做一段物理地址的映射， vma->vm_start用户层不指定的话则系统自己选择虚拟地址，vma->vm_end - vma->vm_start，大小由用户空间指定,需要大于4K， 物理地址因需要右移一页大小，所以物理地址需要大于4K
 	ret = remap_pfn_range(vma, vma->vm_start, virt_to_phys(mmapbuf) >> PAGE_SHIFT, vma->vm_end - vma->vm_start, vma->vm_page_prot);
 	if (ret) {
 		pr_err("Remapping remap_pfn_range memory, error: %d\n", ret);

@@ -3,19 +3,61 @@
 start_kernel()
 	...
 	setup_arch(&command_line)
+		...
+		parse_early_param()																	//early=1的情况再这里解析
+			strlcpy(tmp_cmdline, boot_command_line, COMMAND_LINE_SIZE)
+			parse_early_options(tmp_cmdline)
+				parse_args("early options", cmdline, NULL, 0, 0, 0, NULL, do_early_param)
+					...
+					while (*args) {															//循环取出启动参数中以空格分开的各个配置
+						...
+						args = next_arg(args, &param, &val)									//调用next_arg解析数据，args就是cmdline；param就是一个属性的起始地址；val就是属性值的起始地址也就是=号后面的内容。属性与属性之间用空格隔开
+						...
+						parse_one(param, val, doing, params, num, min_level, max_level, arg, unknown)
+							...
+							handle_unknown(param, val, doing, arg)
+								do_early_param()														
+									for (p = __setup_start; p < __setup_end; p++)			//每个配置调用该函数，去循环匹配.init.setup段中str
+										if ((p->early && parameq(param, p->str)) ||
+											(strcmp(param, "console") == 0 && trcmp(p->str, "earlycon") == 0)	//cmdline属性值中有名为console，且代码中有定义__setup_param str为earlycon的情况也会往下走
+										p->setup_func(val);													//匹配上就调用
 	...
-	parse_early_param()
-		strlcpy(tmp_cmdline, boot_command_line, COMMAND_LINE_SIZE)
-		parse_early_options(tmp_cmdline)
-			parse_args("early options", cmdline, NULL, 0, 0, 0, NULL, do_early_param)	//循环取出启动参数中以空格分开的各个配置
-				do_early_param()														//每个配置调用该函数，去循环匹配.init.setup段中str
-					p->setup_func(val);													//匹配上就调用
+	build_all_zonelists(NULL)
+	...
+	parse_early_param()																		//直接推出
+	after_dashes = parse_args("Booting kernel",												//early=0的情况再这里解析,循环取出启动参数中以空格分开的各个配置
+				  static_command_line, __start___param,
+				  __stop___param - __start___param,
+				  -1, -1, NULL, &unknown_bootoption)
+		unknown_bootoption()
+			obsolete_checksetup(param)
+				...																			//去循环匹配.init.setup段中str
+				p->setup_func(line + n)														//只处理early=0的情况
 
-#define __setup(str, fn)						\										//放在.init.setup段中
+
+
+
+
+
+
+
+
+
+
+#define __setup(str, fn)						\								//放在.init.setup段中
 	__setup_param(str, fn, fn, 0)
 
 #define early_param(str, fn)						\
 	__setup_param(str, fn, fn, 1)
+
+
+#define __setup_param(str, unique_id, fn, early)			\					//这里early为1的情况会在解析设备树后就解析这个cmdline，为0的情况会晚一点才解析
+	static const char __setup_str_##unique_id[] __initconst		\
+		__aligned(1) = str; 					\
+	static struct obs_kernel_param __setup_##unique_id		\
+		__used __section(.init.setup)				\
+		__attribute__((aligned((sizeof(long)))))		\
+		= { __setup_str_##unique_id, fn, early }
 
 *****************************************************
 
@@ -56,6 +98,29 @@ subsys_initcall(param_sysfs_init)
 module_param_named(debug_mask, msm_show_resume_irq_mask, int, 0664);
 ==>/sys/module/msm_show_resume_irq/parameters/debug_mask
 =======================================================================================================================================================================================================================================
+earlycon流程
+
+setenv bootargs root=/dev/mmcblk0p2 rootfstype=ext4 rw rootwait panic=10 earlycon=uart8250,mmio32,0xfeb50000
+
+early_param("earlycon", param_setup_earlycon);
+	...
+	early_init_dt_scan_chosen_stdout()																//cmdline只设置 earlycon 是扫描设备树获取uart信息
+	...
+	setup_earlycon(buf)																				//earlycon有更多参数，则从cmdline中获取
+		for (p_match = __earlycon_table; p_match < __earlycon_table_end; p_match++) 				//循环所有__earlycon_table数组
+			if (strncmp(buf, match->name, len))														// cmdline字段和 EARLYCON_DECLARE对应的name对比
+				register_earlycon(buf, match)
+					parse_options(&early_console_dev, buf)											//获取cmdline的参数
+					match->setup(&early_console_dev, buf)											// early_serial8250_setup
+						...
+						if (!device->baud) 															//若cmdline没有设置波特率的话，则不会初始化沿用uboot的配置
+							...
+						else																		//有设置波特率则会重新初始化
+							init_port(device)
+						device->con->write = early_serial8250_write									//最关键的就是实现uart的输出操作
+							uart_console_write(port, s, count, serial_putc)
+								serial8250_early_out(port, UART_TX, c)								//将字符串写入到uart传输buffer寄存器中
+					register_console(early_console_dev.con)
 
 
 
@@ -63,12 +128,20 @@ module_param_named(debug_mask, msm_show_resume_irq_mask, int, 0664);
 
 
 
+#define _OF_EARLYCON_DECLARE(_name, compat, fn, unique_id)		\
+	static const struct earlycon_id unique_id			\
+	     EARLYCON_USED_OR_UNUSED __initconst			\
+		= { .name = __stringify(_name),				\
+		    .compatible = compat,				\
+		    .setup = fn  };					\
+	static const struct earlycon_id EARLYCON_USED_OR_UNUSED		\
+		__section(__earlycon_table)				\
+		* const __PASTE(__p, unique_id) = &unique_id
 
+#define OF_EARLYCON_DECLARE(_name, compat, fn)				\
+	_OF_EARLYCON_DECLARE(_name, compat, fn,				\
+			     __UNIQUE_ID(__earlycon_##_name))
 
+#define EARLYCON_DECLARE(_name, fn)	OF_EARLYCON_DECLARE(_name, "", fn)
 
-
-
-
-
-
-
+EARLYCON_DECLARE(uart8250, early_serial8250_setup);

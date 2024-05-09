@@ -232,7 +232,7 @@ CLK_OF_DECLARE(sun50i_h5_ccu, "allwinner,sun50i-h5-ccu", sun50i_h5_ccu_setup);
 				struct of_clk_provider *cp
 				cp->data = desc->hw_clks
 				cp->get_hw = of_clk_hw_onecell_get
-				list_add(&cp->link, &of_clk_providers)												//将模块clk集合加入到of_clk_providers链表中
+				list_add(&cp->link, &of_clk_providers)												//将模块clk集合加入到 of_clk_providers 链表中
 
 
 

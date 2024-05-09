@@ -58,7 +58,7 @@ static int mem_test_probe(struct platform_device *pdev)
 
 
 	//例子1：寄存器地址访问
-	//memdata->res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	//memdata->res = platform_get_resource(pdev, IORESOURCE_MEM, 0);						//这两个函数可以用devm_platform_get_and_ioremap_resource()代替
 	//memdata->base = devm_ioremap_resource(&pdev->dev, memdata->res);						//处理申请(request_mem_region)与重映射操作, 相关函数devm_ioremap()
 	//if (IS_ERR(memdata->base)) {
 	//	dev_err(&pdev->dev, "Failed to map the registers\n");
@@ -97,6 +97,7 @@ static int mem_test_probe(struct platform_device *pdev)
 
 
 	//例子3:DMA
+	//3.1.1和3.1.2的方式：先会将内存memremap建立没有cache的映射(MEMREMAP_WC)，再bitmap方式分配？
 	//3.1.1、获取设备树指定该设备的保留内存用作dma
 	//rc = of_reserved_mem_device_init(&pdev->dev);											//获取设备树种指定的保留内存节点信息，映射，把相关信息保存到dev->dma_mem中
 	//if(rc) {
@@ -315,3 +316,7 @@ size_t size, enum dma_data_direction dir)
 发散/汇聚映射： https://blog.csdn.net/eZiMu/article/details/54959269
 */
 
+/*
+dma_map_{single,sg} 这种流式 DMA 映射接口来实现 Cache 同步操作，这类接口的特点就是 Cache 同步只是一次性的，
+即在 dma map 的时候执行一次 Cache Flush 操作，在 dma unmap 的时候执行一次 Cache Invalidate 操作，而这中间的过程是不保证 Cache 和 DDR 上数据的一致性的
+*/
